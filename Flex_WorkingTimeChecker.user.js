@@ -1,7 +1,10 @@
 // ==UserScript==
 // @name         Flex_WorkingTimeChecker
+// @namespace    http://tampermonkey.net/
 // @version      1.0.0
 // @match        https://flex.team/time-tracking/my-work-record*
+// @updateURL    https://raw.githubusercontent.com/brownleaf0215/Tampermonkey/main/Flex_WorkingTimeChecker.users.js
+// @downloadURL  https://raw.githubusercontent.com/brownleaf0215/Tampermonkey/main/Flex_WorkingTimeChecker.users.js
 // ==/UserScript==
 
 (function () {
