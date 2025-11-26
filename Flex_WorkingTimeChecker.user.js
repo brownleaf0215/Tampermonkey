@@ -3,6 +3,8 @@
 // @version      1.0.9
 // @description  시계 기준 알람 + 9시간 알람 + UI + 로그 미친듯이 상세
 // @match        https://flex.team/time-tracking/my-work-record*
+// @updateURL    https://raw.githubusercontent.com/brownleaf0215/Tampermonkey/main/Flex_WorkingTimeChecker.user.js
+// @downloadURL  https://raw.githubusercontent.com/brownleaf0215/Tampermonkey/main/Flex_WorkingTimeChecker.user.js
 // @grant        none
 // ==/UserScript==
 
