@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Flex 근무시간 체크 - 시계기준 알람 완벽 최종판
-// @version      1.0.9
+// @version      1.0.10
 // @description  시계 기준 알람 + 9시간 알람 + UI + 로그 미친듯이 상세
 // @match        https://flex.team/time-tracking/my-work-record*
 // @updateURL    https://raw.githubusercontent.com/brownleaf0215/Tampermonkey/main/Flex_WorkingTimeChecker.user.js
@@ -16,8 +16,8 @@
 
     // 시계 기반 고정 알람 (시간 + 제목 + 부제목 + 이모지)
     const FIXED_ALARMS = new Map([
-        ["11:28", { title: "스크럼 ~", body: "프로그램팀 회의 시작합시다!", emoji: "☕" }],
-        ["13:29", { title: "밥타임", body: "점심 먹으러 ㄱㄱ", emoji: "🍱" }],
+        ["10:28", { title: "스크럼 ~", body: "프로그램팀 회의 시작합시다!", emoji: "☕" }],
+        ["12:29", { title: "밥타임", body: "점심 먹으러 ㄱㄱ", emoji: "🍱" }],
         ["18:59", { title: "밥타임", body: "저녁 먹으러 ㄱㄱ", emoji: "🍱" }],
     ]);
 
@@ -247,3 +247,4 @@
     setTimeout(run, 1200);
     setInterval(run, 2500);
 })();
+
