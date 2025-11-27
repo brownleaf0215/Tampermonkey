@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Flex 근무시간 체크 - 시계기준 알람 완벽 최종판
-// @version      1.1.0
+// @version      1.1.1
 // @description  시계 알람 + 9시간 알람 + 잔여 추가시간(8h) 프로그레스 + 예쁜 UI
 // @match        https://flex.team/time-tracking/my-work-record*
 // @updateURL    https://raw.githubusercontent.com/brownleaf0215/Tampermonkey/main/Flex_WorkingTimeChecker.user.js
@@ -17,7 +17,7 @@
     const WEEKLY_GOAL = BASE_WEEKLY + EXTRA_HOURS;
 
     const FIXED_ALARMS = new Map([
-        ["11:28", { title: "스크럼 ~", body: "프로그램팀 회의 시작합시다!", emoji: "☕" }],
+        ["10:28", { title: "스크럼 ~", body: "팀 회의 시작합시다!", emoji: "☕" }],
         ["12:29", { title: "밥 타임", body: "점심 먹으러 ㄱㄱ", emoji: "🍱" }],
         ["18:59", { title: "밥 타임", body: "저녁 먹으러 ㄱㄱ", emoji: "🍴" }],
     ]);
@@ -99,24 +99,35 @@
 
         if (totalMinutes >= 530 && totalMinutes <= 535 && !triggered9Hour10Min) {
             triggered9Hour10Min = true;
-            triggerAlarm("9시간까지 10분 남음!!", "조금만 더 버텨라!!", "Fire");
+            triggerAlarm("9시간까지 10분 남음!!", "조금만 더 버텨라!!", "🔥");
         }
 
         if (totalMinutes >= 539 && totalMinutes <= 545 && !triggered9HourDone) {
             triggered9HourDone = true;
-            triggerAlarm("9시간 완료!!", "퇴근 가즈아!! 오늘도 수고했다!!", "Party Popper");
+            triggerAlarm("9시간 완료!!", "퇴근 가즈아!! 오늘도 수고했다!!", "👍😄");
         }
     }
 
     function parseHM(str) {
         if (!str) return 0;
-        str = str.trim();
-        const onlyMin = str.match(/^(\d+)분?$/);
-        if (onlyMin) return parseInt(onlyMin[1]) / 60;
-        const withHour = str.match(/(\d+)시간\s*(\d+)분?/);
-        if (withHour) return parseInt(withHour[1]) + (parseInt(withHour[2] || 0) / 60);
-        const colon = str.match(/(\d+):(\d+)/);
+        str = str.trim().replace(/\s/g, ''); // 모든 공백 제거
+
+        // 1. "10시간" 형식
+        const onlyHour = str.match(/^(\d+)시간$/);
+        if (onlyHour) return parseInt(onlyHour[1]);
+
+        // 2. "10시간30분" 형식
+        const hourMin = str.match(/^(\d+)시간(\d+)분?$/);
+        if (hourMin) return parseInt(hourMin[1]) + (parseInt(hourMin[2]) || 0) / 60;
+
+        // 3. "10:30" 형식
+        const colon = str.match(/^(\d+):(\d+)$/);
         if (colon) return parseInt(colon[1]) + parseInt(colon[2]) / 60;
+
+        // 4. "30분" 형식
+        const onlyMin = str.match(/^(\d+)분$/);
+        if (onlyMin) return parseInt(onlyMin[1]) / 60;
+
         return 0;
     }
 
@@ -133,101 +144,117 @@
     }
 
     function run() {
-        checkFixedTimeAlarms();
+    checkFixedTimeAlarms();
 
-        const todayTag = document.querySelector('time[datetime*="T"]');
-        const todayText = todayTag?.textContent?.trim() || "0분";
-        const todayDone = parseHM(todayText);
-        check9HourAlarms(todayDone);
+    // 오늘 근무시간
+    const todayTag = document.querySelector('time[datetime*="T"]');
+    const todayText = todayTag?.textContent?.trim() || "0분";
+    const todayDone = parseHM(todayText);
+    check9HourAlarms(todayDone);
 
-        const weeklySpan = document.querySelector('span.c-lmXAkT');
-        const weeklyText = weeklySpan?.textContent?.trim() || "0시간";
-        const pastWeekly = parseHM(weeklyText);
-        const realWeeklyDone = pastWeekly + todayDone;
+    // 오늘 제외한 주간 누적 (span.c-lmXAkT)
+    const pastTag = document.querySelector('span.c-lmXAkT');
+    const pastWeeklyExcludingToday = parseHM(pastTag?.textContent?.trim() || "0:00");
 
-        const totalLeft = Math.max(0, WEEKLY_GOAL - realWeeklyDone);
-        const remainDays = getRemainDays();
-        const extraLeft = Math.max(0, totalLeft - (DAILY_GOAL * remainDays));
-        const avgExtraPerDay = remainDays > 0 ? extraLeft / remainDays : 0;
+    // 지난 근무일 수 (월요일=1 → 0일, 화요일=2 → 1일, ..., 금요일=5 → 4일)
+    const weekday = new Date().getDay(); // 0=일, 1=월, ..., 6=토
+    const workedDaysExcludingToday = (weekday >= 1 && weekday <= 5) ? weekday - 1 : 0;
 
-        // 잔여 추가시간 퍼센트 (8시간 기준)
-        const extraDone = EXTRA_HOURS - extraLeft;
-        const extraPct = Math.min(100, Math.max(0, (extraDone / EXTRA_HOURS) * 100));
+    // 지난 날들의 기본 근무시간
+    const baseFromPastDays = workedDaysExcludingToday * 9;
 
-        const minsLeft = Math.ceil((9 - todayDone) * 60);
-        const isAlmost = minsLeft === 10;
+    // 지난 날들에서 쌓인 추가시간
+    const extraFromPastDays = Math.max(0, pastWeeklyExcludingToday - baseFromPastDays);
 
-        const todayPct = Math.min(100, (todayDone / 9) * 100);
-        const weeklyPct = Math.min(100, (realWeeklyDone / WEEKLY_GOAL) * 100);
+    // 오늘 추가시간
+    const extraFromToday = Math.max(0, todayDone - 9);
 
-        let box = document.getElementById("flex-box");
-        if (!box) {
-            box = document.createElement("div");
-            box.id = "flex-box";
-            Object.assign(box.style, {
-                position: "fixed", bottom: "24px", right: "24px", width: "380px",
-                background: "linear-gradient(135deg, rgba(20,25,50,0.98), rgba(10,15,35,0.98))",
-                color: "#fff", borderRadius: "28px", padding: "26px", fontFamily: "'Pretendard', sans-serif",
-                fontSize: "14.5px", zIndex: "999999", boxShadow: "0 32px 80px rgba(0,0,0,0.7)",
-                border: "1px solid rgba(100,200,255,0.3)", backdropFilter: "blur(32px)"
-            });
-            document.body.appendChild(box);
-        }
+    // 총 추가시간
+    const extraDone = extraFromPastDays + extraFromToday;
+    const extraLeft = Math.max(0, EXTRA_HOURS - extraDone);
+    const extraPct = (extraDone / EXTRA_HOURS) * 100;
 
-        box.innerHTML = `
-            <style>
-                .bar{height:15px;background:rgba(255,255,255,0.12);border-radius:15px;overflow:hidden;margin:12px 0;box-shadow:inset 0 2px 6px rgba(0,0,0,0.3);}
-                .fill{height:100%;transition:width 1.2s cubic-bezier(0.4,0,0.2,1);border-radius:15px;}
-                .label{display:flex;justify-content:space-between;font-weight:900;margin-bottom:8px;font-size:16px;letter-spacing:-0.3px;}
-                .sub{font-size:13px;opacity:0.88;margin-top:6px;text-align:right;}
-                .glow{animation:g 1.6s infinite alternate;}
-                @keyframes g{from{box-shadow:0 0 40px #ff0066;}to{box-shadow:0 0 80px #ff0066,0 0 120px #ff3399;}}
-                .emoji{font-size:20px;margin-right:6px;}
-            </style>
+    const remainDays = getRemainDays();
+    const avgExtraPerDay = remainDays > 0 ? extraLeft / remainDays : 0;
 
-            <div style="margin-bottom:26px;${isAlmost?'class=glow':''}">
-                <div class="label" style="color:#00e0ff;"><span class="emoji">⏰</span> 오늘 근무 <span>${format(todayDone)} / 9:00</span></div>
-                <div class="bar"><div class="fill" style="width:${todayPct}%;background:linear-gradient(90deg,#00ffff,#00aaff);box-shadow:0 0 20px rgba(0,255,255,0.5);"></div></div>
-                <div class="sub" style="color:${todayDone>=9?'#00ff9d':minsLeft<=30?'#ff3366':'#aaa'}">
-                    ${todayDone>=9?'퇴근 가능! 🏃‍♂️💨':minsLeft<=0?'초과 근무 중 🔥':minsLeft+'분 남음 ⏳'} ${isAlmost?'10분만 더 화이팅! 🚀':''}
-                </div>
-            </div>
+    const realWeeklyDone = pastWeeklyExcludingToday + todayDone;
+    const totalLeft = Math.max(0, WEEKLY_GOAL - realWeeklyDone);
+    const minsLeft = Math.ceil((9 - todayDone) * 60);
+    const isAlmost = minsLeft === 10;
+    const todayPct = Math.min(100, (todayDone / 9) * 100);
+    const weeklyPct = Math.min(100, (realWeeklyDone / WEEKLY_GOAL) * 100);
 
-            <div style="margin-bottom:26px;">
-                <div class="label" style="color:#ff66cc;"><span class="emoji">📅</span> 주간 누적 <span>${format(realWeeklyDone)} / 53:00</span></div>
-                <div class="bar"><div class="fill" style="width:${weeklyPct}%;background:linear-gradient(90deg,#ff66cc,#ff3399);box-shadow:0 0 20px rgba(255,100,200,0.4);"></div></div>
-                <div class="sub" style="color:${realWeeklyDone>=53?'#00ffaa':'#ff88aa'}">
-                    ${realWeeklyDone>=53?'주간 목표 달성! 🏆✨':'남은 시간 '+format(totalLeft)+' ⏰'}
-                </div>
-            </div>
-
-            <div>
-                <div class="label" style="color:#ffff66;"><span class="emoji">⚡</span> 잔여 추가시간 (8시간 기준)</div>
-                <div class="bar">
-                    <div class="fill" style="width:${extraPct}%;background:linear-gradient(90deg,#aaffaa,#66ff99);box-shadow:0 0 20px rgba(100,255,100,0.6);"></div>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
-                    <div style="font-size:13px;color:#ccc;">
-                        남은 날 ${remainDays}일 → 평균 <strong style="color:${avgExtraPerDay>2?'#ff3366':avgExtraPerDay>1?'#ffaa33':'#aaffaa'}">${avgExtraPerDay<=0?'여유만땅 😎':format(avgExtraPerDay)}/일</strong>
-                    </div>
-                    <div class="sub" style="color:${extraLeft<=0?'#00ffaa':extraLeft>6?'#ff3366':extraLeft>3?'#ffaa33':'#ffff88'}">
-                        ${extraLeft<=0?'추가시간 완료! 🎉🎊':extraLeft>6?'죽을 거 같아 💀☠️':extraLeft>3?'빡세네 😓💦':'괜찮음 👍😄'}
-                    </div>
-                </div>
-            </div>
-        `;
-
-        console.log(`%c현재: ${new Date().toTimeString().slice(0,8)} | 오늘: ${format(todayDone)} | 주간: ${format(realWeeklyDone)} | 추가남음: ${format(extraLeft)} (평균 ${format(avgExtraPerDay)}/일)`, "color:#00ffaa;font-size:13px");
+    // 박스
+    let box = document.getElementById("flex-box");
+    if (!box) {
+        box = document.createElement("div");
+        box.id = "flex-box";
+        Object.assign(box.style, {
+            position: "fixed", bottom: "24px", right: "24px", width: "380px",
+            background: "linear-gradient(135deg, rgba(20,25,50,0.98), rgba(10,15,35,0.98))",
+            color: "#fff", borderRadius: "28px", padding: "26px", fontFamily: "'Pretendard', sans-serif",
+            fontSize: "14.5px", zIndex: "999999", boxShadow: "0 32px 80px rgba(0,0,0,0.7)",
+            border: "1px solid rgba(100,200,255,0.3)", backdropFilter: "blur(32px)"
+        });
+        document.body.appendChild(box);
     }
 
-    setInterval(() => {
-        const now = new Date();
-        if (now.getHours() === 0 && now.getMinutes() === 0) {
-            triggeredFixed.clear();
-            triggered9Hour10Min = false;
-            triggered9HourDone = false;
-        }
-    }, 60000);
+    box.innerHTML = `
+        <style>
+            .bar{height:15px;background:rgba(255,255,255,0.12);border-radius:15px;overflow:hidden;margin:12px 0;box-shadow:inset 0 2px 6px rgba(0,0,0,0.3);}
+            .fill{height:100%;transition:width 1.2s cubic-bezier(0.4,0,0.2,1);border-radius:15px;}
+            .label{display:flex;justify-content:flex-start;gap:16px;align-items:center;font-weight:900;margin-bottom:8px;font-size:16px;letter-spacing:-0.3px;}
+            .sub{font-size:13px;opacity:0.88;margin-top:6px;text-align:right;}
+            .glow{animation:g 1.6s infinite alternate;}
+            @keyframes g{from{box-shadow:0 0 40px #ff0066;}to{box-shadow:0 0 80px #ff0066,0 0 120px #ff3399;}}
+            .emoji{font-size:20px;}
+        </style>
+
+        <div style="margin-bottom:26px;${isAlmost?'class=glow':''}">
+            <div class="label" style="color:#00e0ff;"><span class="emoji">⏰</span> 오늘 근무 <span style="margin-left:auto;">${format(todayDone)} / 9:00</span></div>
+            <div class="bar"><div class="fill" style="width:${todayPct}%;background:linear-gradient(90deg,#00ffff,#00aaff);box-shadow:0 0 20px rgba(0,255,255,0.5);"></div></div>
+            <div class="sub" style="color:${todayDone>=9?'#00ff9d':minsLeft<=30?'#ff3366':'#aaa'}">
+                ${todayDone>=9?'퇴근 가능! 🏃‍♂️💨':minsLeft<=0?'초과 근무 중 🔥':minsLeft+'분 남음 ⏳'} ${isAlmost?'10분만 더 화이팅! 🚀':''}
+            </div>
+        </div>
+
+        <div style="margin-bottom:26px;">
+            <div class="label" style="color:#ff66cc;"><span class="emoji">📅</span> 주간 누적 <span style="margin-left:auto;">${format(realWeeklyDone)} / 53:00</span></div>
+            <div class="bar"><div class="fill" style="width:${weeklyPct}%;background:linear-gradient(90deg,#ff66cc,#ff3399);box-shadow:0 0 20px rgba(255,100,200,0.4);"></div></div>
+            <div class="sub" style="color:${realWeeklyDone>=53?'#00ffaa':'#ff88aa'}">
+                ${realWeeklyDone>=53?'주간 목표 달성! 🏆✨':'남은 시간 '+format(totalLeft)+' ⏰'}
+            </div>
+        </div>
+
+        <div>
+            <div class="label" style="color:#ffff66;"><span class="emoji">⚡</span> 잔여 추가시간 (8시간 기준)</div>
+            <div class="bar">
+                <div class="fill" style="width:${extraPct.toFixed(1)}%;background:linear-gradient(90deg,#aaffaa,#66ff99);box-shadow:0 0 20px rgba(100,255,100,0.6);"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+                <div style="font-size:13px;color:#ccc;">
+                    남은 날 ${remainDays}일 → 평균 <strong style="color:${avgExtraPerDay>2?'#ff3366':avgExtraPerDay>1?'#ffaa33':'#aaffaa'}">${avgExtraPerDay<=0?'여유만땅 😎':format(avgExtraPerDay)}/일</strong>
+                </div>
+                <div class="sub" style="color:${extraLeft<=0?'#00ffaa':extraLeft>6?'#ff3366':extraLeft>3?'#ffaa33':'#ffff88'}">
+                    ${extraLeft<=0?'추가시간 완료! 🎉🎊':extraLeft>6?'죽을 거 같아 💀☠️':extraLeft>3?'빡세네 😓💦':'괜찮음 👍😄'}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+    let lastResetDate = null;
+setInterval(() => {
+    const now = new Date();
+    const today = now.toDateString();
+    if (lastResetDate !== today) {
+        lastResetDate = today;
+        triggeredFixed.clear();
+        triggered9Hour10Min = false;
+        triggered9HourDone = false;
+        console.log("%c새로운 날 시작 → 모든 알람 리셋됨", "color:#00ff00;font-weight:bold");
+    }
+}, 1000);
 
     if (Notification.permission === "default") {
         setTimeout(() => Notification.requestPermission(), 4000);
