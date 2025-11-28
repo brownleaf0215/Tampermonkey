@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Flex 근무시간 체크 - 시계기준 알람 완벽 최종판
-// @version      1.1.1
+// @version      1.1.2
 // @description  시계 알람 + 9시간 알람 + 잔여 추가시간(8h) 프로그레스 + 예쁜 UI
 // @match        https://flex.team/time-tracking/my-work-record*
 // @updateURL    https://raw.githubusercontent.com/brownleaf0215/Tampermonkey/main/Flex_WorkingTimeChecker.user.js
