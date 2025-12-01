@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Flex 근무시간 체크 - 밥자격 + 실제 퇴근시간 완벽판
-// @version      1.3.0
+// @version      1.5.0
 // @description  9시간 알람 + 2시간30분 밥자격 알람 + 실제 시계 기준 퇴근시간 표시
 // @match        https://flex.team/time-tracking/my-work-record*
 // @updateURL    https://raw.githubusercontent.com/brownleaf0215/Tampermonkey/main/Flex_WorkingTimeChecker.user.js
@@ -192,14 +192,44 @@
 
         box.innerHTML = `
             <style>
-                .bar{height:15px;background:rgba(255,255,255,0.12);border-radius:15px;overflow:hidden;margin:12px 0;box-shadow:inset 0 2px 6px rgba(0,0,0,0.3);}
-                .fill{height:100%;transition:width 1.2s cubic-bezier(0.4,0,0.2,1);border-radius:15px;}
-                .label{display:flex;justify-content:flex-start;gap:16px;align-items:center;font-weight:900;margin-bottom:8px;font-size:16px;letter-spacing:-0.3px;}
-                .sub{font-size:13px;opacity:0.88;margin-top:6px;text-align:right;}
-                .glow{animation:g 1.6s infinite alternate;}
-                @keyframes g{from{box-shadow:0 0 40px #ff0066;}to{box-shadow:0 0 80px #ff0066,0 0 120px #ff3399;}}
-                .emoji{font-size:20px;}
-            </style>
+    /* 프로그레스바 배경 진하게 + 대비 확살 */
+    .bar{
+        height:17px;
+        background:#0a0e17;                     /* 거의 블랙에 가까운 다크 */
+        border-radius:13px;
+        overflow:hidden;
+        margin:15px 0;
+        box-shadow:
+            inset 0 3px 10px #000,
+            0 0 20px rgba(0,245,255,0.15);       /* 바 자체도 살짝 네온 아우라 */
+        border:1px solid #1e293b;
+    }
+    .fill{
+        height:100%;
+        border-radius:13px;
+        background:linear-gradient(90deg,#00f9ff,#00ccff,#0099ff);
+        box-shadow:
+            0 0 30px rgba(0,249,255,0.7),
+            inset 0 1px 3px rgba(255,255,255,0.4);
+        transition:width 1.6s cubic-bezier(0.16,1,0.3,1);
+        position:relative;
+        overflow:hidden;
+    }
+    .fill::after{
+        content:'';
+        position:absolute;
+        inset:0;
+        background:linear-gradient(90deg,transparent 30%,rgba(255,255,255,0.35) 50%,transparent 70%);
+        animation:shine 3s infinite linear;
+    }
+    @keyframes shine{0%{transform:translateX(-200%)}100%{transform:translateX(200%)}}
+
+    .label{font-weight:900;font-size:18px;display:flex;align-items:center;gap:16px;margin-bottom:12px;color:#f1f5f9;letter-spacing:-0.6px;font-family:system-ui,-apple-system,sans-serif;}
+    .sub{font-size:14px;color:#94a3b8;margin-top:9px;text-align:right;font-weight:600;}
+    .emoji{font-size:26px;filter:drop-shadow(0 2px 6px #000);}
+    .glow{animation:mglow 2.4s ease-in-out infinite alternate;}
+    @keyframes mglow{from{filter:drop-shadow(0 0 25px #00f9ff88);}to{filter:drop-shadow(0 0 50px #00ccffcc);}}
+</style>
 
             <div style="margin-bottom:26px;${todayDone >= 8.83 ? 'class=glow' : ''}">
                 <div class="label" style="color:#00e0ff;">
@@ -207,11 +237,11 @@
                     <span style="margin-left:auto;">${format(todayDone)} / 9:00</span>
                 </div>
                 <div style="font-size:13px;color:#aaffff;margin-top:4px;text-align:right;">
-                    📍 실제 퇴근 예정: <strong>${realEndTime}</strong>
+                    📍 퇴근 자격 시간: <strong>${realEndTime}</strong>
                 </div>
                 <div class="bar"><div class="fill" style="width:${todayPct}%;background:linear-gradient(90deg,#00ffff,#00aaff);box-shadow:0 0 20px rgba(0,255,255,0.5);"></div></div>
                 <div class="sub" style="color:${todayDone>=9?'#00ff9d':todayDone>=8.5?'#ff3366':'#aaa'}">
-                    ${todayDone>=9?'퇴근 가능! 🏃‍♂️💨':'아직 '+format(9-todayDone)+' 남음 ⏳'}
+                    ${todayDone>=9?'퇴근 가능! 🏃‍♂️💨': format(9-todayDone)+' 남음 ⏳'}
                 </div>
             </div>
 
@@ -223,7 +253,7 @@
                 </div>
                 <div class="bar"><div class="fill" style="width:${mealPct}%;background:linear-gradient(90deg,#ff99aa,#ff3366);box-shadow:0 0 20px #ff006655;"></div></div>
                 <div class="sub" style="color:${todayDone>=11.5?'#ff00aa':'#ff88aa'}">
-                    ${todayDone>=11.5 ? '✅ 밥자격 완료!! 맛있게 먹어~ 🥹❤️' : '아직 '+format(11.5-todayDone)+' 남음 😭'}
+                    ${todayDone>=11.5 ? '✅ 밥자격 완료!! 맛있게 먹어~ 🥹❤️' : format(11.5-todayDone)+' 남음 😭'}
                 </div>
             </div>` : ''}
 
@@ -234,13 +264,14 @@
                 </div>
                 <div class="bar"><div class="fill" style="width:${weeklyPct}%;background:linear-gradient(90deg,#ff66cc,#ff3399);"></div></div>
                 <div class="sub" style="color:${realWeeklyDone>=53?'#00ffaa':'#ff88aa'}">
-                    ${realWeeklyDone>=53?'주간 목표 달성! 🏆':'남은 시간 '+format(totalLeft)+' ⏰'}
+                    ${realWeeklyDone>=53?'주간 목표 달성! 🏆': format(totalLeft)+' 남음 ⏰'}
                 </div>
             </div>
 
             <div>
                 <div class="label" style="color:#ffff66;">
-                    <span class="emoji">⚡</span> 잔여 추가시간 (8시간)
+                    <span class="emoji">⚡</span> 잔여 추가시간
+                    <span style="margin-left:auto;">${format(extraDone)} / 8:00</span>
                 </div>
                 <div class="bar"><div class="fill" style="width:${extraPct.toFixed(1)}%;background:linear-gradient(90deg,#aaffaa,#66ff99);"></div></div>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
@@ -248,7 +279,7 @@
                         남은 날 ${remainDays}일 → 평균 <strong style="color:${avgExtraPerDay>2?'#ff3366':avgExtraPerDay>1?'#ffaa33':'#aaffaa'}">${avgExtraPerDay<=0?'여유만땅 😎':format(avgExtraPerDay)}/일</strong>
                     </div>
                     <div class="sub" style="color:${extraLeft<=0?'#00ffaa':extraLeft>6?'#ff3366':extraLeft>3?'#ffaa33':'#ffff88'}">
-                        ${extraLeft<=0?'추가시간 완료! 🎉':extraLeft>6?'죽을거같아 💀':extraLeft>3?'빡세네 😓':'괜찮음 👍'}
+                        ${extraLeft<=0?'추가시간 완료! 🎉':format(extraLeft)+' 남음 💀'}
                     </div>
                 </div>
             </div>
