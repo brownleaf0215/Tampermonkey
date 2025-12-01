@@ -249,7 +249,7 @@
             <div style="margin-bottom:26px;">
                 <div class="label" style="color:#ff66aa;">
                     <span class="emoji">🍖</span> 밥자격 충전중
-                    <span style="margin-left:auto;">+${format(todayDone-9)} / +2:30</span>
+                    <span style="margin-left:auto;">${format(todayDone-9)} / 2:30</span>
                 </div>
                 <div class="bar"><div class="fill" style="width:${mealPct}%;background:linear-gradient(90deg,#ff99aa,#ff3366);box-shadow:0 0 20px #ff006655;"></div></div>
                 <div class="sub" style="color:${todayDone>=11.5?'#ff00aa':'#ff88aa'}">
@@ -307,3 +307,4 @@
 
     setTimeout(run, 1500);
 })();
+
