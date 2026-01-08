@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Flex 근무시간 체크 - 밥자격 + 실제 퇴근시간 완벽판
-// @version      1.6.0
+// @version      2.1.0
 // @description  9시간 알람 + 2시간30분 밥자격 알람 + 실제 시계 기준 퇴근시간 표시
 // @match        https://flex.team/time-tracking/my-work-record*
 // @updateURL    https://raw.githubusercontent.com/brownleaf0215/Tampermonkey/main/Flex_WorkingTimeChecker.user.js
@@ -16,22 +16,16 @@
     // =========================================================================
     const CONFIG = {
         GOALS: {
-            DAILY: 9.0,             // 9시간 체류
-            MEAL_QUALIFY: 2.5,      // 저녁 식대 (9+2.5)
-            WEEKLY_LUNCH: 5.0       // 주간 점심
+            DAILY: 9.0,
+            MEAL_QUALIFY: 2.5,
+            WEEKLY_LUNCH: 5.0
         },
+        // 90년대 느낌 알림 텍스트
         ALARMS: [
-            { time: "10:28", title: "스크럼 준비!", body: "오늘도 찢어보자고! 🔥", emoji: "☕" },
-            { time: "12:29", title: "점심 시간!", body: "맛점하고 텐션 올려! 🍔", emoji: "🍱" },
-            { time: "18:59", title: "저녁 시간!", body: "법카로 맛난거 먹자 💳", emoji: "🌙" }
-        ],
-        // MZ 스타일 네온 팔레트
-        THEME: {
-            TODAY:  { bg: 'linear-gradient(135deg, #00F5A0 0%, #00D9F5 100%)', text: 'linear-gradient(to right, #00F5A0, #00D9F5)' },
-            MEAL:   { bg: 'linear-gradient(135deg, #FF9A9E 0%, #FECFEF 99%, #FECFEF 100%)', text: 'linear-gradient(to right, #FF9A9E, #FECFEF)' }, // 핑크 팝
-            WEEKLY: { bg: 'linear-gradient(135deg, #A18CD1 0%, #FBC2EB 100%)', text: 'linear-gradient(to right, #d585ff, #00ffee)' },
-            BADGE:  { bg: 'rgba(255, 255, 255, 0.15)', border: '1px solid rgba(255,255,255,0.3)' }
-        }
+            { time: "10:28", title: "[공지] 스크럼 접속 요망", body: "오늘도 건승하십시오.", emoji: "💾" },
+            { time: "12:29", title: "(( 점심 시간 ))", body: "식사 맛있게 하세요~ ^^", emoji: "🍱" },
+            { time: "18:59", title: "★퇴근시간 임박★", body: "천리안 접속 종료하시겠습니까?", emoji: "🚪" }
+        ]
     };
 
     // =========================================================================
@@ -73,139 +67,132 @@
             const workedMs = todayDone * 60 * 60 * 1000;
             const targetMs = 9 * 60 * 60 * 1000;
             const remainMs = targetMs - workedMs;
-            if (remainMs <= 0) return "Right Now!";
+            if (remainMs <= 0) return "NOW";
             const endTime = new Date(now.getTime() + remainMs);
             return endTime.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
         },
 
         triggerAlarm(title, body = "", emoji = "🔔") {
             const now = new Date();
-            const displayTime = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+            const timeStr = now.toLocaleTimeString();
 
+            // 브라우저 타이틀 깜빡임 (고전 스타일)
             let count = 0;
             const originalTitle = document.title;
             const titleInterval = setInterval(() => {
-                document.title = count++ % 2 ? `${emoji} ${title}` : originalTitle;
+                document.title = count++ % 2 ? `*** ${title} ***` : originalTitle;
                 if (count > 20) { clearInterval(titleInterval); document.title = originalTitle; }
             }, 500);
 
-            // 알람 시 화면 전체가 파티 조명처럼 번쩍임
-            const flash = document.createElement("div");
-            flash.style.cssText = `
-                pointer-events:none;position:fixed;top:0;left:0;width:100vw;height:100vh;
-                background: linear-gradient(45deg, rgba(255,0,200,0.3), rgba(0,255,255,0.3));
-                z-index:999999;opacity:0;transition:opacity 0.3s ease-in-out; mix-blend-mode: screen;
-            `;
-            document.body.appendChild(flash);
-            let toggle = 0;
-            const flashInterval = setInterval(()=>{
-                 flash.style.opacity = toggle++ % 2 ? "1" : "0.3";
-            }, 150);
-            setTimeout(() => { clearInterval(flashInterval); flash.remove(); }, 1500);
-
             if (Notification.permission === "granted") {
-                new Notification(`${emoji} ${title}`, {
-                    body: `${body}\n(${displayTime})`,
+                new Notification(`[System] ${title}`, {
+                    body: `${body}\nTime: ${timeStr}`,
                     icon: "https://flex.team/favicon.ico",
-                    requireInteraction: false, renotify: true, tag: "alarm-" + Date.now()
+                    requireInteraction: false
                 });
             }
         },
+
         log(msg) {
-            console.log(`%c✨ ${msg}`, "color:#fff;background:#7b2ff7;padding:4px 8px;border-radius:10px;font-weight:bold;");
+            console.log(`%c💾 C:\\> ${msg}`, "color:#00ff00;background:#000;padding:4px;font-family:monospace;");
         }
     };
 
     // =========================================================================
-    // 4. UI (MZ Neon Style)
+    // 4. UI (Win95 Style)
     // =========================================================================
     const UI = {
-        containerId: "flex-mz-box",
+        containerId: "win95-flex-box",
 
         injectStyles() {
-            if (document.getElementById("flex-mz-style")) return;
+            if (document.getElementById("win95-style")) return;
             const css = `
-                @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-
+                /* 90년대 폰트와 기본 설정 */
                 #${this.containerId} {
-                    position: fixed; bottom: 30px; right: 30px; width: 360px; padding: 26px;
-                    border-radius: 28px;
-                    /* 딥 다크 + 글래스 */
-                    background: rgba(18, 18, 28, 0.85);
-                    backdrop-filter: blur(20px);
-                    -webkit-backdrop-filter: blur(20px);
-                    /* 네온 테두리 */
-                    border: 2px solid rgba(255, 255, 255, 0.1);
-                    box-shadow:
-                        0 10px 40px -10px rgba(0,0,0,0.8),
-                        inset 0 0 0 1px rgba(255,255,255,0.1),
-                        0 0 20px rgba(123, 47, 247, 0.2); /* 보라색 글로우 */
-                    font-family: 'Pretendard', sans-serif;
-                    color: #fff; z-index: 999999;
-                    transform: translateZ(0);
-                    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-                }
-                #${this.containerId}:hover {
-                    transform: translateY(-8px) scale(1.02);
-                    box-shadow:
-                        0 20px 50px -10px rgba(0,0,0,0.8),
-                        0 0 30px rgba(123, 47, 247, 0.4);
-                    border-color: rgba(255,255,255,0.3);
+                    position: fixed; bottom: 20px; right: 20px; width: 320px;
+                    background-color: #c0c0c0; /* 윈도우 95 회색 */
+                    border: 2px solid;
+                    border-color: #ffffff #808080 #808080 #ffffff; /* 3D 효과 */
+                    font-family: 'Gulim', 'MS Sans Serif', 'Dotum', sans-serif;
+                    font-size: 12px;
+                    color: black;
+                    z-index: 999999;
+                    box-shadow: 4px 4px 10px rgba(0,0,0,0.5);
+                    user-select: none;
                 }
 
-                .mz-row { margin-bottom: 24px; position: relative; }
-                .mz-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+                /* 타이틀 바 */
+                .win95-title-bar {
+                    background: #000080; /* 남색 */
+                    color: white;
+                    padding: 3px 4px;
+                    font-weight: bold;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    letter-spacing: 1px;
+                }
+                .win95-btn-close {
+                    width: 16px; height: 14px;
+                    background: #c0c0c0;
+                    border: 1px solid;
+                    border-color: #ffffff #808080 #808080 #ffffff;
+                    font-size: 10px; line-height: 10px; text-align: center;
+                    font-weight: bold; color: black; cursor: pointer;
+                }
+                .win95-btn-close:active {
+                    border-color: #808080 #ffffff #ffffff #808080;
+                }
 
-                /* 이모지 둥둥 애니메이션 */
-                .mz-emoji {
-                    font-size: 22px; margin-right: 10px; display:inline-block;
-                    animation: float 3s ease-in-out infinite;
-                }
-                @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+                /* 컨텐츠 영역 */
+                .win95-content { padding: 10px; }
 
-                .mz-title {
-                    font-size: 16px; font-weight: 800; letter-spacing: -0.5px;
-                    text-transform: uppercase;
+                /* 섹션 박스 (Fieldset 느낌) */
+                .win95-group {
+                    border: 1px solid;
+                    border-color: #808080 #ffffff #ffffff #808080; /* 오목한 효과 */
+                    padding: 8px; margin-bottom: 8px;
+                    background: #c0c0c0;
                 }
-                .mz-value { font-size: 14px; font-weight: 600; color: #aeb9cc; font-feature-settings: "tnum"; }
+                .win95-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+                .win95-label { font-weight: bold; }
 
-                /* 그라데이션 텍스트 (이모지 제외) */
-                .gradient-text {
-                    background-clip: text; -webkit-background-clip: text;
-                    -webkit-text-fill-color: transparent;
+                /* 프로그레스 바 컨테이너 (오목) */
+                .win95-progress-bg {
+                    height: 16px;
+                    background: white;
+                    border: 1px solid;
+                    border-color: #808080 #ffffff #ffffff #808080;
+                    position: relative;
+                }
+                /* 프로그레스 바 채우기 (파란 블럭) */
+                .win95-progress-fill {
+                    height: 100%;
+                    background: #000080;
+                    display: block;
+                }
+                /* 90년대 격자 무늬 오버레이 효과 */
+                .win95-progress-fill::after {
+                    content: ""; position: absolute; top:0; left:0; right:0; bottom:0;
+                    background-image: linear-gradient(90deg, transparent 50%, rgba(255,255,255,0.2) 50%);
+                    background-size: 4px 4px;
                 }
 
-                .mz-bar-bg {
-                    height: 12px; background: rgba(255,255,255,0.08); border-radius: 100px; overflow: hidden;
-                    box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+                /* 하단 상태바 */
+                .win95-status-bar {
+                    border: 1px solid;
+                    border-color: #808080 #ffffff #ffffff #808080;
+                    padding: 2px 4px;
+                    margin-top: 4px;
+                    font-size: 11px; color: #444;
                 }
-                .mz-bar-fill {
-                    height: 100%; border-radius: 100px; position: relative;
-                    transition: width 1s cubic-bezier(0.22, 1, 0.36, 1);
-                }
-                /* 바 위의 빛나는 효과 */
-                .mz-bar-fill::after {
-                    content: ''; position: absolute; top: 0; left: 0; bottom: 0; width: 100%;
-                    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent);
-                    transform: translateX(-100%);
-                    animation: shimmer 2s infinite;
-                }
-                @keyframes shimmer { 100% { transform: translateX(150%); } }
 
-                .mz-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
-
-                .mz-badge {
-                    padding: 4px 10px; border-radius: 8px; font-size: 11px; font-weight: 800;
-                    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15);
-                    color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.5);
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-                }
-                .highlight-time {
-                    font-weight: 800; color: #fff; text-shadow: 0 0 10px rgba(255,255,255,0.6);
-                }
+                /* 깜빡이는 텍스트 효과 */
+                .blink { animation: blinker 1s linear infinite; color: red; font-weight: bold; }
+                @keyframes blinker { 50% { opacity: 0; } }
             `;
             const style = document.createElement("style");
-            style.id = "flex-mz-style";
+            style.id = "win95-style";
             style.textContent = css;
             document.head.appendChild(style);
         },
@@ -221,65 +208,55 @@
 
             const { todayDone, todayPct, realEndTime, mealPct, realWeeklyDone, weeklyGoal, weeklyPct, totalLeft } = data;
 
-            // 색상 테마 단축키
-            const T = CONFIG.THEME;
-
             box.innerHTML = `
-                <div class="mz-row">
-                    <div class="mz-header">
-                        <div style="display:flex;align-items:center;">
-                            <span class="mz-emoji">⚡</span>
-                            <span class="mz-title gradient-text" style="background-image:${T.TODAY.text}">Today Vibes</span>
-                        </div>
-                        <div class="mz-value">${Utils.formatTime(todayDone)} / 9.0</div>
-                    </div>
-                    <div class="mz-bar-bg">
-                        <div class="mz-bar-fill" style="width: ${todayPct}%; background: ${T.TODAY.bg}; box-shadow: 0 0 15px #00F5A0;"></div>
-                    </div>
-                    <div class="mz-footer">
-                        <span style="font-size:12px; color:#aaa;">퇴근각: <span class="highlight-time">${realEndTime}</span></span>
-                        <span class="mz-badge" style="${todayDone >= 9 ? 'background:#00F5A0;color:#000;border:none;' : ''}">
-                            ${todayDone >= 9 ? '퇴근 쌉가능 🏄‍♂️' : Utils.formatTime(9 - todayDone) + ' 존버 🔥'}
-                        </span>
-                    </div>
+                <div class="win95-title-bar">
+                    <span>Flex.exe</span>
+                    <div class="win95-btn-close" onclick="this.parentElement.parentElement.remove()">x</div>
                 </div>
+                <div class="win95-content">
 
-                ${todayDone >= 9 ? `
-                <div class="mz-row">
-                    <div class="mz-header">
-                        <div style="display:flex;align-items:center;">
-                            <span class="mz-emoji">🍗</span>
-                            <span class="mz-title gradient-text" style="background-image:${T.MEAL.text}">Bob Time</span>
+                    <div class="win95-group">
+                        <div class="win95-row">
+                            <span class="win95-label">Today Work:</span>
+                            <span>${Utils.formatTime(todayDone)} / 9.0 hrs</span>
                         </div>
-                        <div class="mz-value">${Utils.formatTime(Math.max(0, todayDone - 9))} / 2.5</div>
+                        <div class="win95-progress-bg">
+                            <div class="win95-progress-fill" style="width: ${todayPct}%"></div>
+                        </div>
+                        <div class="win95-row" style="margin-top:4px;">
+                            <span>Exit: <b>${realEndTime}</b></span>
+                            <span class="${todayDone >= 9 ? 'blink' : ''}">
+                                ${todayDone >= 9 ? 'Ready to Eject' : 'Processing...'}
+                            </span>
+                        </div>
                     </div>
-                    <div class="mz-bar-bg">
-                        <div class="mz-bar-fill" style="width: ${mealPct}%; background: ${T.MEAL.bg}; box-shadow: 0 0 15px #FF9A9E;"></div>
-                    </div>
-                    <div class="mz-footer">
-                        <span style="font-size:12px; color:#aaa;">법카 찬스</span>
-                        <span class="mz-badge" style="${todayDone >= 11.5 ? 'background:#FF9A9E;color:#000;border:none;' : ''}">
-                            ${todayDone >= 11.5 ? '획득 완료 🤑' : Utils.formatTime(11.5 - todayDone) + ' 남음'}
-                        </span>
-                    </div>
-                </div>` : ''}
 
-                <div class="mz-row" style="margin-bottom:0;">
-                    <div class="mz-header">
-                        <div style="display:flex;align-items:center;">
-                            <span class="mz-emoji">💎</span>
-                            <span class="mz-title gradient-text" style="background-image:${T.WEEKLY.text}">Weekly Goal</span>
+                    ${todayDone >= 9 ? `
+                    <div class="win95-group">
+                        <div class="win95-row">
+                            <span class="win95-label">Bonus Meal:</span>
+                            <span>${Math.floor(mealPct)}%</span>
                         </div>
-                        <div class="mz-value">${Utils.formatTime(realWeeklyDone)} / ${Utils.formatTime(weeklyGoal)}</div>
+                        <div class="win95-progress-bg">
+                            <div class="win95-progress-fill" style="width: ${mealPct}%; background: #008000;"></div>
+                        </div>
+                    </div>` : ''}
+
+                    <div class="win95-group" style="margin-bottom:0;">
+                        <div class="win95-row">
+                            <span class="win95-label">Weekly Total:</span>
+                            <span>${Utils.formatTime(realWeeklyDone)} / ${Utils.formatTime(weeklyGoal)}</span>
+                        </div>
+                        <div class="win95-progress-bg">
+                            <div class="win95-progress-fill" style="width: ${weeklyPct}%; background: #800080;"></div>
+                        </div>
+                        <div style="text-align:right; margin-top:2px;">
+                            ${realWeeklyDone >= weeklyGoal ? '<span class="blink">★ MISSION COMPLETE ★</span>' : `Rem: ${Utils.formatTime(totalLeft)}`}
+                        </div>
                     </div>
-                    <div class="mz-bar-bg">
-                        <div class="mz-bar-fill" style="width: ${weeklyPct}%; background: ${T.WEEKLY.bg}; box-shadow: 0 0 15px #A18CD1;"></div>
-                    </div>
-                    <div class="mz-footer">
-                        <span style="font-size:12px; color:#aaa;">주간 퀘스트</span>
-                        <span class="mz-badge" style="${realWeeklyDone >= weeklyGoal ? 'background:#A18CD1;color:#fff;border:none;' : ''}">
-                            ${realWeeklyDone >= weeklyGoal ? '클리어! 🏆' : Utils.formatTime(totalLeft) + ' 남음'}
-                        </span>
+
+                    <div class="win95-status-bar">
+                        ${todayDone >= 9 ? 'System: Safe to shutdown.' : 'System: Working...'}
                     </div>
                 </div>
             `;
@@ -313,39 +290,29 @@
         const totalMinutes = Math.round(todayDone * 60);
         if (totalMinutes >= 530 && totalMinutes <= 535 && !State.dynamicAlarms.min10) {
             State.dynamicAlarms.min10 = true;
-            Utils.triggerAlarm("집 갈 준비 해!!", "10분 남았다. 짐 싸라. 🎒", "🏃‍♂️");
+            Utils.triggerAlarm("Warning", "System shutdown in 10 mins.", "⚠️");
         }
-        if (totalMinutes >= 540 && totalMinutes <= 545 && !State.dynamicAlarms.done9) {
+        if (todayDone >= 9 && !State.dynamicAlarms.done9) {
             State.dynamicAlarms.done9 = true;
-            Utils.triggerAlarm("퇴근 시간이다!!!", "뒤도 돌아보지 말고 튀어!! 🚀", "🏠");
-        }
-        if (todayDone >= (CONFIG.GOALS.DAILY + CONFIG.GOALS.MEAL_QUALIFY) && !State.dynamicAlarms.meal) {
-            State.dynamicAlarms.meal = true;
-            Utils.triggerAlarm("야근 식대 획득", "고생했다.. 맛난거 시켜먹자 🍗", "💳");
+            Utils.triggerAlarm("Complete", "Task finished successfully.", "🆗");
         }
     }
 
     function run() {
-        // 날짜 리셋 체크
         const todayStr = new Date().toDateString();
         if (State.lastResetDate !== todayStr) {
             State.lastResetDate = todayStr;
             State.alarmsTriggered.clear();
             State.dynamicAlarms = { min10: false, done9: false, meal: false };
-            Utils.log("New Day, New Vibes ✨");
+            Utils.log("System Booting...");
         }
 
-        // 데이터 파싱
+        // Flex 페이지 DOM 구조에 맞춰 데이터 파싱 (Flex 업데이트 시 수정 필요)
         const todayTag = document.querySelector('time[datetime*="T"]');
         const todayText = todayTag?.textContent?.trim() || "0분";
         const todayDone = Utils.parseTime(todayText);
 
-        const baseTimeTag = document.querySelector('.c-hSTiUQ');
         let baseWeeklyHours = 40;
-        if (baseTimeTag) {
-            const baseText = baseTimeTag.textContent.replace('-', '').trim();
-            baseWeeklyHours = Utils.parseTime(baseText);
-        }
         const weeklyGoal = baseWeeklyHours + CONFIG.GOALS.WEEKLY_LUNCH;
 
         const pastTag = document.querySelector('span.c-lmXAkT');
@@ -354,19 +321,16 @@
         const totalLeft = Math.max(0, weeklyGoal - realWeeklyDone);
         const realEndTime = Utils.calculateEndTime(todayDone);
 
-        // 퍼센트 계산
         const todayPct = Math.min(100, (todayDone / CONFIG.GOALS.DAILY) * 100);
         const weeklyPct = Math.min(100, (realWeeklyDone / weeklyGoal) * 100);
         const mealPct = todayDone >= CONFIG.GOALS.DAILY ? Math.min(100, ((todayDone - CONFIG.GOALS.DAILY) / CONFIG.GOALS.MEAL_QUALIFY) * 100) : 0;
 
-        // 실행
         checkAlarms(todayDone);
         UI.render({ todayDone, todayPct, realEndTime, mealPct, realWeeklyDone, weeklyGoal, weeklyPct, totalLeft });
     }
 
-    // 초기 실행
     if (Notification.permission === "default") setTimeout(() => Notification.requestPermission(), 4000);
-    Utils.log("MZ Flex Checker Loaded 🤘");
+    Utils.log("Win95 Mode Loaded.");
     setTimeout(run, 1500);
     setInterval(run, 2000);
 })();
