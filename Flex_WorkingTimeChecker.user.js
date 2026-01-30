@@ -181,8 +181,8 @@
         let statusColor = "#000";
 
         if (todayDone < 0.5) { statusIcon="☕"; statusMsg = "뇌 부팅 중... 커피 수혈 시급"; }
-        else if (todayDone < 3.5) { statusIcon="🔥"; statusMsg = "오전 업무 처리 중 (영혼 없음)"; }
-        else if (todayDone < 4.5) { statusIcon="🍱"; statusMsg = "점심 메뉴 고민 중..."; }
+        else if (todayDone < 3.0) { statusIcon="🔥"; statusMsg = "오전 업무 처리 중 (영혼 없음)"; }
+        else if (todayDone < 3.5) { statusIcon="🍱"; statusMsg = "점심 메뉴 고민 중..."; }
         else if (todayDone < 6.0) { statusIcon="💤"; statusMsg = "식곤증과 사투 중..."; }
         else if (todayDone < 8.0) { statusIcon="💾"; statusMsg = "시간이 멈춘 것 같습니다..."; }
         else if (todayDone < 8.8) { statusIcon="👀"; statusMsg = "눈치 게임 시작. 퇴근각 재는 중"; }
@@ -357,3 +357,4 @@
 
     setTimeout(run, 1500);
 })();
+
