@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Flex 근무시간 체크 - 밥자격 + 실제 퇴근시간 완벽판
-// @version      3.0.0
+// @version      3.0.1
 // @description  9시간 알람 + 2시간30분 밥자격 알람 + 실제 시계 기준 퇴근시간 표시
 // @match        https://flex.team/time-tracking/my-work-record*
 // @updateURL    https://raw.githubusercontent.com/brownleaf0215/Tampermonkey/main/Flex_WorkingTimeChecker.user.js
@@ -34,7 +34,7 @@
     let lastCheckedMinute = -1;
 
     console.clear();
-    console.log("%c[SYSTEM] Flex 95 로드됨...", "color:#008080;font-family:monospace;font-size:16px;background:#c0c0c0;padding:4px");
+    console.log("%c[SYSTEM] GPUN Work Manager Pro 로드됨...", "color:#008080;font-family:monospace;font-size:16px;background:#c0c0c0;padding:4px");
 
     /* ==========================================================================
        핵심 로직 (KERNEL32)
@@ -53,7 +53,7 @@
         }, 500);
 
         if (Notification.permission === "granted") {
-            new Notification(`[Flex 95] ${title}`, {
+            new Notification(`[GPUN] ${title}`, {
                 body: `${body}\n(발생 시각: ${displayTime})`,
                 icon: "https://win98icons.alexmeub.com/icons/png/msg_warning-0.png",
                 requireInteraction: true
@@ -357,4 +357,5 @@
 
     setTimeout(run, 1500);
 })();
+
 
