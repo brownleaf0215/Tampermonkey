@@ -1,6 +1,6 @@
 // ==UserScript==
-// @name         Flex 근무시간 체크 + 익명채팅 (레트로 완벽판)
-// @version      5.0.0
+// @name         Flex 근무시간 체크 - 밥자격 + 실제 퇴근시간 완벽판
+// @version      5.0.1
 // @description  찐 윈도우95 UI + 랜덤 뻘글 상태창 + 익명 비밀채팅
 // @match        https://flex.team/time-tracking/my-work-record*
 // @updateURL    https://raw.githubusercontent.com/brownleaf0215/Tampermonkey/main/Flex_WorkingTimeChecker.user.js
