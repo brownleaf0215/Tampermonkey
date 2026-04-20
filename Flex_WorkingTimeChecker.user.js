@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Flex 근무시간 체크 - 밥자격 + 실제 퇴근시간 완벽판
-// @version      8.1.0
-// @description  2026 MZ 글래스모피즘 UI + 랜덤 뻘글 + 익명 채팅 + 오늘의 운세 100종
+// @version      8.2.0
+// @description  2026 MZ 글래스모피즘 UI + 랜덤 뻘글 + 익명 채팅 + 오늘의 운세 100종 + 운세 히스토리 그래프
 // @match        https://flex.team/time-tracking/my-work-record*
 // @updateURL    https://raw.githubusercontent.com/brownleaf0215/Tampermonkey/main/Flex_WorkingTimeChecker.user.js
 // @downloadURL  https://raw.githubusercontent.com/brownleaf0215/Tampermonkey/main/Flex_WorkingTimeChecker.user.js
@@ -300,6 +300,15 @@
             }
             const idx = getDailyFortuneSeed();
             const fortune = { date: today, ...FORTUNE_DATA[idx] };
+
+            // ★ 히스토리 배열 유지 (최근 10개)
+            const history = (data && data.history) ? data.history : [];
+            if (data && data.date && data.score !== undefined) {
+                history.push({ date: data.date, score: data.score });
+            }
+            if (history.length > 10) history.splice(0, history.length - 10);
+            fortune.history = history;
+
             await fetch(nodeUrl, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -635,6 +644,42 @@
     transition:width 1s cubic-bezier(0.4,0,0.2,1);
 }
 
+/* ── Fortune History Chart ── */
+#${P}-root .${P}-ft-hist { margin-top:14px; }
+#${P}-root .${P}-ft-hist-title {
+    font-size:10px; font-weight:600; text-transform:uppercase;
+    letter-spacing:0.6px; color:rgba(255,255,255,0.3); margin-bottom:8px;
+}
+#${P}-root .${P}-ft-chart {
+    display:flex; align-items:flex-end; gap:4px;
+    height:70px; padding:0 2px;
+}
+#${P}-root .${P}-ft-bar-wrap {
+    flex:1; display:flex; flex-direction:column;
+    align-items:center; gap:3px; min-width:0;
+}
+#${P}-root .${P}-ft-bar-col {
+    width:100%; border-radius:3px 3px 2px 2px;
+    transition:height 0.7s cubic-bezier(0.4,0,0.2,1);
+    min-height:3px;
+}
+#${P}-root .${P}-ft-bar-lbl {
+    font-size:9px; color:rgba(255,255,255,0.28);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    width:100%; text-align:center; font-variant-numeric:tabular-nums;
+}
+#${P}-root .${P}-ft-bar-score {
+    font-size:9px; color:rgba(255,255,255,0.4);
+    font-weight:600; font-variant-numeric:tabular-nums;
+    line-height:1;
+}
+#${P}-root .${P}-ft-bar-today .${P}-ft-bar-lbl {
+    color:rgba(255,255,255,0.65); font-weight:700;
+}
+#${P}-root .${P}-ft-bar-today .${P}-ft-bar-score {
+    color:rgba(255,255,255,0.75);
+}
+
 /* ── Chat ── */
 #${P}-root .${P}-cht {
     height:110px; overflow-y:auto; padding:8px 10px;
@@ -719,6 +764,45 @@
     }
 
     /* ==========================================================================
+       운세 히스토리 그래프 빌더
+       ========================================================================== */
+    function buildFortuneHistChart(history, todayScore) {
+        const all = [...(history || []), { date: 'today', score: todayScore }].slice(-10);
+        if (all.length < 1) return '';
+
+        const MAX_BAR_H = 44;
+
+        function scoreColor(s) {
+            if (s >= 75) return '#a78bfa';       // 길/대길 — 보라
+            if (s >= 55) return '#34d399';        // 평     — 초록
+            if (s >= 35) return '#fbbf24';        // 흉     — 노랑
+            return '#f87171';                     // 대흉   — 빨강
+        }
+
+        const chartItems = all.map(item => {
+            const barH = Math.max(4, Math.round((item.score / 100) * MAX_BAR_H));
+            const color = scoreColor(item.score);
+            const isToday = item.date === 'today';
+            const label = isToday ? '오늘' : item.date.slice(5).replace('-', '/');
+            const todayCls = isToday ? ` ${P}-ft-bar-today` : '';
+            const opacity = isToday ? '1' : '0.5';
+            return `
+            <div class="${P}-ft-bar-wrap${todayCls}">
+                <span class="${P}-ft-bar-score">${item.score}</span>
+                <div class="${P}-ft-bar-col"
+                     style="height:${barH}px;background:${color};opacity:${opacity};"></div>
+                <span class="${P}-ft-bar-lbl">${label}</span>
+            </div>`;
+        }).join('');
+
+        return `
+        <div class="${P}-ft-hist">
+            <div class="${P}-ft-hist-title">최근 운세 점수</div>
+            <div class="${P}-ft-chart">${chartItems}</div>
+        </div>`;
+    }
+
+    /* ==========================================================================
        메인 실행
        ========================================================================== */
     function run() {
@@ -793,6 +877,7 @@
                 </div>
                 <div class="${P}-ft-body">${f.body}</div>
                 <div class="${P}-ft-advice">💡 ${f.advice}</div>
+                ${buildFortuneHistChart(f.history, f.score)}
             </div>` : `
             <div class="${P}-cd">
                 <div class="${P}-cl">🔮 오늘의 운세</div>
