@@ -1,11 +1,15 @@
 // ==UserScript==
 // @name         Flex 근무시간 체크 - 밥자격 + 실제 퇴근시간 완벽판
-// @version      8.2.0
+// @version      8.3.0
 // @description  2026 MZ 글래스모피즘 UI + 랜덤 뻘글 + 익명 채팅 + 오늘의 운세 100종 + 운세 히스토리 그래프
 // @match        https://flex.team/time-tracking/my-work-record*
 // @updateURL    https://raw.githubusercontent.com/brownleaf0215/Tampermonkey/main/Flex_WorkingTimeChecker.user.js
 // @downloadURL  https://raw.githubusercontent.com/brownleaf0215/Tampermonkey/main/Flex_WorkingTimeChecker.user.js
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @connect      monkeychatting-default-rtdb.firebaseio.com
+// @connect      raw.githubusercontent.com
 // ==/UserScript==
 
 (function () {
@@ -37,241 +41,158 @@
 
     const P = "gpun7";
 
+    function firebaseRequest(method, url, data) {
+        return new Promise((resolve, reject) => {
+            GM_xmlhttpRequest({
+                method,
+                url,
+                headers: data === undefined ? {} : { 'Content-Type': 'application/json' },
+                data: data === undefined ? undefined : JSON.stringify(data),
+                responseType: 'json',
+                timeout: 10000,
+                onload: (response) => resolve({
+                    ok: response.status >= 200 && response.status < 300,
+                    status: response.status,
+                    data: response.response
+                }),
+                onerror: () => reject(new Error('Firebase request failed')),
+                ontimeout: () => reject(new Error('Firebase request timed out'))
+            });
+        });
+    }
+
     /* ==========================================================================
-       랜덤 멘트
+       외부 콘텐츠 데이터
        ========================================================================== */
-    const ALARM_MENT = {
-        "10:28": {
-            title: "스크럼 1분 전",
-            bodies: [
-                "팀장님 오십니다. 알트+탭 장전하세요.",
-                "영혼 없는 '네, 알겠습니다' 발사 준비.",
-                "어제 한 일: 숨쉬기. 오늘 할 일: 퇴근.",
-                "모니터 닦는 척하면서 바쁜 척 하세요.",
-                "커피 수혈이 시급합니다. 탕비실로 튀어!",
-                "스크럼의 정석: 고개 끄덕 + 마이크 음소거",
-                "할 말은 없지만 카메라는 켜야 합니다.",
-                "'진행 중입니다'는 마법의 주문입니다.",
-                "어제 뭐 했는지 지금 급하게 만들어내는 중.",
-                "스크럼 끝나면 진짜 업무 시작... 아닐 수도."
-            ]
-        },
-        "12:29": {
-            title: "점심시간 1분 전",
-            bodies: [
-                "지갑 챙기셨나요? 맛점하러 튀어!",
-                "엘리베이터 눈치게임 시작! 늦으면 줄 섭니다.",
-                "오후를 버티기 위한 칼로리 비축 시간입니다.",
-                "오늘은 법카 찬스 없나요? 내돈내산 ㅠ",
-                "점심 메뉴 고르는 게 오늘 가장 어려운 업무.",
-                "배에서 고래가 노래합니다. 출동하세요.",
-                "같이 먹자는 말 = 메뉴 정해달라는 뜻",
-                "오늘의 미션: 어제와 다른 메뉴 선택하기",
-                "밥 먹고 나면 또 졸릴 거란 걸 알지만... 갑니다.",
-                "구내식당 vs 외식, 매일 반복되는 철학적 고민."
-            ]
-        },
-        "18:59": {
-            title: "저녁식사 시간",
-            bodies: [
-                "야근 확정... 법카로 맛있는 거라도 드세요.",
-                "집에 가고 싶다... 격렬하게 집에 가고 싶다.",
-                "회사에 뼈를 묻지 마세요, 집에 묻으세요.",
-                "야근 요정이 당신을 찾아왔습니다 (절망)",
-                "지금 나가는 저 사람, 혹시 배신자...?",
-                "저녁값이라도 비싼 거 먹어서 복수합시다.",
-                "야근은 체력이 아니라 멘탈의 영역입니다.",
-                "퇴근한 동료의 카톡 프사가 눈부십니다.",
-                "내일의 나에게 미안하지만... 오늘도 남는다.",
-                "사무실 불이 꺼지면 내 영혼도 같이 꺼집니다."
-            ]
+    const DATA_URLS = {
+        messages: 'https://raw.githubusercontent.com/brownleaf0215/Tampermonkey/main/data/flex-messages.json',
+        fortunes: 'https://raw.githubusercontent.com/brownleaf0215/Tampermonkey/main/data/flex-fortunes.json'
+    };
+    const DATA_CACHE_KEYS = {
+        messages: 'gpun7_messages_v1',
+        fortunes: 'gpun7_fortunes_v1'
+    };
+    const FALLBACK_MESSAGES = {
+        alarms: {},
+        status: {
+            level1: ['오늘도 천천히 시작해보세요.'],
+            level2: ['오후도 무리하지 말고 진행하세요.'],
+            level3: ['조금만 더 버티면 퇴근이 가까워집니다.'],
+            level4: ['퇴근까지 얼마 남지 않았습니다.'],
+            level5: ['오늘 근무를 완료했습니다.']
         }
     };
+    const FALLBACK_FORTUNES = [{
+        score: 70,
+        title: '평 ★★★☆☆',
+        body: '무난하고 안정적인 하루입니다.',
+        advice: '평소의 리듬을 유지하세요.'
+    }];
 
-    const STATUS_MENT = {
-        level1: [
-            "뇌 부팅 중... (진행률 12%)",
-            "집에서 나왔는데 집에 가고 싶다.",
-            "아직도 오전이라니, 시계 고장난 듯.",
-            "모니터 뚫어지게 보며 딴 생각 하는 중.",
-            "아침부터 기가 빨립니다...",
-            "오늘따라 키보드 소리가 거슬리네요.",
-            "출근한 거 자체가 오늘의 성과입니다.",
-            "눈은 떴는데 정신은 이불 속에 있음.",
-            "로딩 중... 잠시만 기다려 주세요.",
-            "아메리카노가 혈관을 타고 흐르는 중.",
-            "메일함 여는 것부터가 보스 레이드.",
-            "오늘 하루가 1주일처럼 느껴질 예감."
-        ],
-        level2: [
-            "식곤증과의 사투... 눈꺼풀이 천근만근",
-            "커피 약발이 떨어져 갑니다. 리필 요망.",
-            "점심 먹은 거 다 소화됨. 간식 마렵다.",
-            "의미 없는 마우스 딸깍거림 시전 중.",
-            "팀장님과 눈 마주침. (회피 기동 성공)",
-            "이 시간대가 제일 시간이 안 갑니다.",
-            "화장실 다녀오면 5분은 벌 수 있다.",
-            "슬랙 알림 소리에 심장이 멎을 뻔.",
-            "탕비실 왕복이 오늘의 유일한 운동.",
-            "자리에 앉아있지만 영혼은 부재중.",
-            "오후 3시의 벽... 넘을 수 있을까.",
-            "졸음 vs 업무, 현재 졸음이 우세합니다."
-        ],
-        level3: [
-            "퇴근 쿨타임 도는 중... 버텨야 한다.",
-            "슬슬 가방 지퍼를 열어둘 시간입니다.",
-            "내일의 나에게 업무를 토스 준비 중.",
-            "엉덩이에 쥐가 날 것 같습니다.",
-            "창밖을 보며 자유를 갈망하는 중.",
-            "오늘 저녁은 뭘 먹어야 소문이 날까.",
-            "퇴근 후 계획이 나를 살아있게 합니다.",
-            "시계를 3번 연속 쳐다봤는데 1분도 안 지남.",
-            "남은 업무량 vs 남은 의지력 = 0:0",
-            "지금 이 순간 전국의 직장인이 공감 중.",
-            "모니터 속 내 얼굴이 처량해 보입니다.",
-            "커피 4잔째... 이게 맞나 싶지만 마십니다."
-        ],
-        level4: [
-            "눈치 게임 시작. 누가 먼저 일어날 것인가.",
-            "마음은 이미 지하철 탔습니다.",
-            "모니터를 끄는 상상을 했습니다. 짜릿해.",
-            "외투를 슬쩍 의자에 걸쳐둡니다.",
-            "1분이 1시간처럼 느껴지는 매직.",
-            "퇴근 버튼에 마우스 커서를 살짝 올려봄.",
-            "가방 속 이어폰 케이스를 만지작거리는 중.",
-            "화면은 업무용, 뇌는 퇴근 시뮬레이션 중.",
-            "옆자리가 일어나면 나도 같이 일어날 준비.",
-            "슬랙 상태를 '자리 비움'으로 바꾸고 싶다."
-        ],
-        level5: [
-            "★ 시스템 종료 가능 ★ 당장 나가세요!",
-            "승리자! 당신의 자유를 쟁취했습니다.",
-            "아직도 안 가셨나요? 회사의 노예...",
-            "치킨 한 마리 시켜도 무죄인 시간입니다.",
-            "야근 수당이라도 달달하게 챙깁시다 ㅠ",
-            "한 발짝만 더 가면 엘리베이터입니다.",
-            "오늘도 살아남았다. 내일도 파이팅...",
-            "퇴근이 곧 힐링. 문 밖이 천국.",
-            "PC 종료 단축키: Win+L → 기상 → 퇴근",
-            "남아있는 분, 내일의 영웅이 되실 겁니다."
-        ]
-    };
+    let ALARM_MENT = FALLBACK_MESSAGES.alarms;
+    let STATUS_MENT = FALLBACK_MESSAGES.status;
+    let FORTUNE_DATA = FALLBACK_FORTUNES;
 
-    /* ==========================================================================
-       오늘의 운세 데이터 — 5등급 × 20개 = 100개
-       대길(90~99) / 길(75~89) / 평(55~74) / 흉(35~54) / 대흉(10~34)
-       ========================================================================== */
-    const FORTUNE_DATA = [
-        /* ── 대길 ── */
-        { score: 99, title: "대길 ★★★★★", body: "오늘은 우주가 당신 편입니다. 팀장님 기분 최고, 커피도 맛있음.", advice: "하고 싶은 말 오늘 다 해도 됩니다." },
-        { score: 97, title: "대길 ★★★★★", body: "막혔던 PR도 오늘은 머지됩니다. 모든 일이 술술 풀리는 날.", advice: "오늘 연차 쓰면 낭비입니다. 출근이 곧 행운." },
-        { score: 95, title: "대길 ★★★★★", body: "기획서 한 번에 통과, 회의 일찍 끝남, 점심 줄도 짧음. 3관왕.", advice: "자신감 있게 발언하세요. 오늘은 빛납니다." },
-        { score: 94, title: "대길 ★★★★★", body: "팀장님이 먼저 칭찬합니다. 받아치지 말고 그냥 웃으세요.", advice: "평소 미루던 업무 오늘 다 처리 가능." },
-        { score: 93, title: "대길 ★★★★★", body: "일도 잘 풀리고 점심도 맛있고 오후도 집중이 잘 됩니다.", advice: "팀원에게 먼저 커피 한 잔 사줘도 좋은 날." },
-        { score: 92, title: "대길 ★★★★★", body: "코드를 짜면 버그가 없고, 메일을 쓰면 답장이 빠릅니다.", advice: "어려운 협업 요청도 오늘은 긍정적으로 받아들여집니다." },
-        { score: 91, title: "대길 ★★★★★", body: "집중력이 최고조. 오전에 한 일이 평소 하루치와 맞먹습니다.", advice: "가장 어려운 업무를 오전 중에 처리하세요." },
-        { score: 90, title: "대길 ★★★★★", body: "오늘 발표가 있다면 대박 납니다. 없어도 기운이 넘칩니다.", advice: "적극적으로 의견을 내세요. 오늘은 설득력이 최강." },
-        { score: 96, title: "대길 ★★★★★", body: "회식 제안이 들어올 수도 있습니다. 오늘만큼은 가도 좋습니다.", advice: "오늘 30분 일찍 시작하면 퇴근도 30분 빨라집니다." },
-        { score: 98, title: "대길 ★★★★★", body: "전설급 하루입니다. 복권을 사도 좋을 것 같은 기운.", advice: "주변에 좋은 에너지를 나눠주세요. 돌아옵니다." },
-        { score: 99, title: "대길 ★★★★★", body: "슬랙 알림이 전부 좋은 소식입니다. 오늘만큼은 진짜입니다.", advice: "오늘 하루만큼은 긍정적인 마음으로 시작하세요." },
-        { score: 93, title: "대길 ★★★★★", body: "팀 전체 분위기가 좋은 날. 덩달아 나도 기분이 올라갑니다.", advice: "점심에 새로운 가게 도전해보세요. 성공 확률 높음." },
-        { score: 91, title: "대길 ★★★★★", body: "오늘 제출한 보고서는 첫 번째 시도에 통과됩니다.", advice: "할 말 있으면 오늘 하세요. 귀 기울여줄 겁니다." },
-        { score: 94, title: "대길 ★★★★★", body: "뭘 해도 잘 되는 날. 심지어 프린터도 말을 잘 듣습니다.", advice: "오늘 배운 것은 오래 기억됩니다. 공부하기 좋은 날." },
-        { score: 97, title: "대길 ★★★★★", body: "오늘의 키워드는 순풍. 흐름을 타면 하루가 쭉쭉 풀립니다.", advice: "망설이던 결정, 오늘 내리세요. 후회 없습니다." },
-        { score: 90, title: "대길 ★★★★★", body: "팀장님과 대화가 술술 풀립니다. 평소보다 말이 잘 통하는 날.", advice: "요청사항이 있다면 오늘 말하는 게 최적 타이밍." },
-        { score: 95, title: "대길 ★★★★★", body: "오늘 만드는 산출물은 퀄리티가 높습니다. 스스로도 놀랄 수준.", advice: "포트폴리오에 넣을 작업, 오늘 하면 딱 좋습니다." },
-        { score: 92, title: "대길 ★★★★★", body: "협업 운이 최고조입니다. 다른 팀에 부탁해도 거절당하지 않는 날.", advice: "밀린 협업 요청들을 오늘 한꺼번에 처리하세요." },
-        { score: 96, title: "대길 ★★★★★", body: "오늘은 아이디어가 샘솟습니다. 메모장을 열어두세요.", advice: "브레인스토밍 회의가 있다면 오늘이 최고의 날입니다." },
-        { score: 98, title: "대길 ★★★★★", body: "오늘만큼은 야근도 고통스럽지 않습니다. 그래도 제시간에 가는 게 이득.", advice: "에너지가 넘치는 날. 퇴근 후 운동을 붙여보세요." },
+    function isNonEmptyString(value) {
+        return typeof value === 'string' && value.trim().length > 0;
+    }
 
-        /* ── 길 ── */
-        { score: 88, title: "길 ★★★★☆", body: "작은 행운이 반복됩니다. 점심 줄 짧고 회의 일찍 끝납니다.", advice: "오후 집중력이 좋습니다. 복잡한 작업은 오후에 배치하세요." },
-        { score: 86, title: "길 ★★★★☆", body: "오후에 좋은 소식 하나가 옵니다. 메신저를 주목하세요.", advice: "기대 이상의 결과가 나올 수 있습니다. 믿어보세요." },
-        { score: 84, title: "길 ★★★★☆", body: "전반적으로 순탄합니다. 큰 사건 없이 하루가 흘러갑니다.", advice: "루틴대로 움직이면 하루가 완벽하게 마무리됩니다." },
-        { score: 82, title: "길 ★★★★☆", body: "인간관계 운 상승. 밥 같이 먹자는 말 오늘은 해도 됩니다.", advice: "혼자 끙끙대던 문제, 동료에게 물어보면 쉽게 풀립니다." },
-        { score: 80, title: "길 ★★★★☆", body: "오전에 시동이 잘 걸립니다. 출근하자마자 중요한 것부터 처리하세요.", advice: "점심 후 15분 짧은 산책이 오후 생산성을 높여줍니다." },
-        { score: 85, title: "길 ★★★★☆", body: "업무 집중력이 평소보다 높습니다. 방해 요소를 최소화하면 폭발적 성과.", advice: "슬랙 알림 잠시 끄고 집중 모드 돌입하세요." },
-        { score: 79, title: "길 ★★★★☆", body: "팀 분위기가 좋아서 덩달아 컨디션이 올라가는 날입니다.", advice: "긍정 에너지를 먼저 건네면 더 크게 돌아옵니다." },
-        { score: 87, title: "길 ★★★★☆", body: "오늘 제출하는 자료는 큰 수정 없이 넘어갑니다. 한 번에 OK 기대.", advice: "퇴근 전 내일 할 일 목록 적어두면 내일도 좋은 날이 됩니다." },
-        { score: 83, title: "길 ★★★★☆", body: "집중력이 좋은 날. 이어폰 꽂고 몰입하면 두 배 성과 가능.", advice: "점심은 든든하게. 오후에 체력이 뒷받침돼야 마무리가 깔끔합니다." },
-        { score: 81, title: "길 ★★★★☆", body: "사소한 행운들이 겹칩니다. 엘리베이터 바로 오고 자리도 여유 있고.", advice: "작은 행운에 감사하면 더 큰 행운이 따라옵니다." },
-        { score: 89, title: "길 ★★★★☆", body: "커뮤니케이션 운이 좋습니다. 내 의도가 잘 전달되는 날.", advice: "어려운 대화가 필요했다면 오늘이 적기입니다." },
-        { score: 76, title: "길 ★★★★☆", body: "조용하지만 알차게 흘러가는 날. 소란 없이 성과가 쌓입니다.", advice: "묵묵히 하던 일 계속하세요. 알아보는 사람이 있습니다." },
-        { score: 88, title: "길 ★★★★☆", body: "에너지가 충전된 느낌. 새로운 시도를 해도 좋은 타이밍입니다.", advice: "미뤄두던 배움이나 공부, 오늘부터 시작하면 지속됩니다." },
-        { score: 78, title: "길 ★★★★☆", body: "오늘 한 배려 하나가 나중에 크게 돌아옵니다.", advice: "팀원 도움 요청에 기꺼이 응해주세요. 인복이 쌓입니다." },
-        { score: 85, title: "길 ★★★★☆", body: "업무 효율이 좋은 날. 같은 시간에 더 많이 할 수 있습니다.", advice: "타이머 25분 집중 기법 오늘 써보세요. 효과 두 배." },
-        { score: 77, title: "길 ★★★★☆", body: "점심 메뉴 선택이 오늘따라 탁월합니다. 미식운 상승.", advice: "오후 간식 타이밍 잘 잡으면 3~5시 슬럼프 없이 넘깁니다." },
-        { score: 83, title: "길 ★★★★☆", body: "평소 연락이 뜸했던 동료에게 연락이 옵니다. 반갑게 받아주세요.", advice: "네트워킹 운이 좋은 날. 점심 자리 수락하세요." },
-        { score: 80, title: "길 ★★★★☆", body: "아이디어보다 실행력이 뛰어난 날입니다. 생각보다 행동.", advice: "확신이 없어도 일단 시작하세요. 오늘은 행동이 답입니다." },
-        { score: 87, title: "길 ★★★★☆", body: "오늘 처음 시도하는 일이 예상보다 잘 됩니다.", advice: "두려워했던 새 업무, 오늘 시작하면 생각보다 쉽습니다." },
-        { score: 75, title: "길 ★★★★☆", body: "전반적으로 차분하고 안정적인 하루. 마음이 편안합니다.", advice: "무리하지 않아도 충분한 날. 페이스 유지가 핵심입니다." },
+    function validateMessages(value) {
+        if (!value || typeof value !== 'object' || !value.alarms || !value.status) return false;
+        const alarmsValid = Object.entries(value.alarms).every(([time, alarm]) =>
+            /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time) &&
+            alarm && isNonEmptyString(alarm.title) &&
+            Array.isArray(alarm.bodies) && alarm.bodies.length > 0 &&
+            alarm.bodies.every(isNonEmptyString)
+        );
+        const statusValid = ['level1', 'level2', 'level3', 'level4', 'level5'].every((level) =>
+            Array.isArray(value.status[level]) && value.status[level].length > 0 &&
+            value.status[level].every(isNonEmptyString)
+        );
+        return alarmsValid && statusValid;
+    }
 
-        /* ── 평 ── */
-        { score: 74, title: "평 ★★★☆☆", body: "무난합니다. 무난함이 곧 행복임을 오늘은 깨달을 것입니다.", advice: "기대치를 낮추면 만족도가 올라갑니다." },
-        { score: 70, title: "평 ★★★☆☆", body: "에너지가 평균치. 커피 한 잔으로 적절히 조절하세요.", advice: "억지로 기운 내려 하지 마세요. 자연스러운 리듬을 따르세요." },
-        { score: 68, title: "평 ★★★☆☆", body: "딱 보통인 날. 드라마도 없고 사고도 없습니다.", advice: "평범한 날이 쌓여 좋은 커리어가 됩니다. 오늘도 성실하게." },
-        { score: 65, title: "평 ★★★☆☆", body: "크게 나쁘지도 좋지도 않습니다. 무난하게 흘러가는 하루.", advice: "루틴에 충실하면 후회 없는 하루가 됩니다." },
-        { score: 72, title: "평 ★★★☆☆", body: "집중이 잘 되다가 안 되다가 반복됩니다. 짧은 휴식으로 리셋.", advice: "5분 환기 → 10분 집중 사이클로 오후를 공략하세요." },
-        { score: 60, title: "평 ★★★☆☆", body: "오늘은 굳이 새로운 시도를 하지 않아도 됩니다. 현상 유지가 미덕.", advice: "기존 업무 마무리에 집중하세요. 완성도를 높이는 날." },
-        { score: 67, title: "평 ★★★☆☆", body: "기분도 날씨도 딱 보통. 어디서 기운을 보충할지 고민해보세요.", advice: "점심에 햇볕 좀 쬐고 오세요. 비타민D가 필요한 날." },
-        { score: 73, title: "평 ★★★☆☆", body: "아무 일도 일어나지 않는 날. 그게 축복일 수도 있습니다.", advice: "조용한 날엔 문서 정리나 메일함 정리를 추천합니다." },
-        { score: 62, title: "평 ★★★☆☆", body: "컨디션이 보통입니다. 무리하지 않는 게 최선입니다.", advice: "오늘 하루 목표를 딱 두 가지로만 정해보세요." },
-        { score: 69, title: "평 ★★★☆☆", body: "뭔가 더 잘하고 싶은데 몸이 따라주지 않는 날.", advice: "완벽하지 않아도 괜찮습니다. 오늘은 충분히 좋음으로 목표를 낮추세요." },
-        { score: 71, title: "평 ★★★☆☆", body: "기대 이상도 이하도 아닌, 딱 예상한 만큼의 하루.", advice: "일관성이 신뢰를 만듭니다. 오늘도 꾸준하게." },
-        { score: 64, title: "평 ★★★☆☆", body: "집중과 해이 사이를 오가는 날. 자신에게 너그럽게 대하세요.", advice: "완벽한 집중보다 꾸준한 진행이 오늘의 전략입니다." },
-        { score: 58, title: "평 ★★★☆☆", body: "특별한 사건 없이 시간이 흐릅니다. 그것도 나쁘지 않습니다.", advice: "조용한 날일수록 내면의 목소리에 귀 기울이세요." },
-        { score: 66, title: "평 ★★★☆☆", body: "눈에 띄는 성과는 없지만 착실하게 쌓이는 날입니다.", advice: "보이지 않는 노력이 나중에 큰 결과로 나타납니다." },
-        { score: 57, title: "평 ★★★☆☆", body: "오늘은 무난하게 버티는 것이 목표. 그것만으로 충분합니다.", advice: "현재에 집중하세요. 과거도 미래도 오늘은 잠깐 내려두세요." },
-        { score: 74, title: "평 ★★★☆☆", body: "업무가 평온하게 진행됩니다. 큰 파도 없는 잔잔한 하루.", advice: "잔잔한 날에 다음 주 계획을 세워두면 알차게 활용됩니다." },
-        { score: 61, title: "평 ★★★☆☆", body: "하루가 빠르지도 느리지도 않게 흘러갑니다.", advice: "적당한 페이스가 장기전에서 이깁니다. 지치지 마세요." },
-        { score: 56, title: "평 ★★★☆☆", body: "별 탈 없이 마무리되는 날. 그것 자체가 감사한 일입니다.", advice: "퇴근 후 좋아하는 것 하나를 계획해두면 오후가 버텨집니다." },
-        { score: 63, title: "평 ★★★☆☆", body: "보통의 하루지만, 마지막에 작은 보람이 기다리고 있습니다.", advice: "오늘 하루 끝에 스스로에게 작은 칭찬을 해주세요." },
-        { score: 55, title: "평 ★★★☆☆", body: "딱 중간입니다. 올라갈 수도 내려갈 수도 있습니다.", advice: "긍정적인 프레임 하나가 하루를 바꿀 수 있습니다." },
+    function validateFortunes(value) {
+        return Array.isArray(value) && value.length === 100 && value.every((item) =>
+            item && Number.isInteger(item.score) && item.score >= 10 && item.score <= 99 &&
+            isNonEmptyString(item.title) && isNonEmptyString(item.body) &&
+            isNonEmptyString(item.advice)
+        );
+    }
 
-        /* ── 흉 ── */
-        { score: 54, title: "흉 ★★☆☆☆", body: "슬랙 알림이 유독 많을 예감. 화장실에서 잠깐 숨 고르세요.", advice: "반응 속도를 의도적으로 늦추세요. 급할수록 실수가 납니다." },
-        { score: 50, title: "흉 ★★☆☆☆", body: "오타와 실수가 잦은 날. 전송 버튼 누르기 전에 한 번 더 읽어보세요.", advice: "중요한 메일이나 문서는 최소 두 번 검토하고 내보내세요." },
-        { score: 47, title: "흉 ★★☆☆☆", body: "잠이 모자란 느낌. 점심 후 15분 눈 감기를 강력 추천합니다.", advice: "카페인에만 의존하지 마세요. 짧은 휴식이 더 효과적입니다." },
-        { score: 44, title: "흉 ★★☆☆☆", body: "괜히 말 한마디가 오해를 살 수 있는 날. 오늘은 신중하게.", advice: "필요한 말만 하세요. 불필요한 코멘트는 오늘 보류." },
-        { score: 42, title: "흉 ★★☆☆☆", body: "집중이 잘 안 되고 실수가 눈에 띄는 날. 자책하지 마세요.", advice: "실수를 빨리 인정하고 수정하는 것이 최선입니다." },
-        { score: 48, title: "흉 ★★☆☆☆", body: "팀 분위기가 다소 무거운 날. 괜히 불씨를 건드리지 마세요.", advice: "분위기 메이커가 되려 하지 말고 조용히 자기 일에 집중하세요." },
-        { score: 40, title: "흉 ★★☆☆☆", body: "기대했던 피드백이 기대를 빗나갑니다. 상처받지 마세요.", advice: "비판을 개인 공격으로 받아들이지 말고 개선점으로 보세요." },
-        { score: 52, title: "흉 ★★☆☆☆", body: "몸이 무겁고 집중이 흩어집니다. 욕심 부리지 말고 천천히 가세요.", advice: "투두 리스트를 반으로 줄이세요. 오늘은 50%만 해도 성공." },
-        { score: 38, title: "흉 ★★☆☆☆", body: "오늘은 유독 시간이 안 갑니다. 시계를 너무 자주 보지 마세요.", advice: "시계 대신 할 일 목록을 보세요. 시간이 더 빨리 갑니다." },
-        { score: 45, title: "흉 ★★☆☆☆", body: "작은 트러블이 생길 수 있습니다. 여유를 갖고 대처하세요.", advice: "당황하지 마세요. 대부분의 문제는 생각보다 빨리 해결됩니다." },
-        { score: 51, title: "흉 ★★☆☆☆", body: "에너지가 낮고 의욕이 없는 날. 억지로 쥐어짜지 말아요.", advice: "최소한의 목표만 달성해도 충분합니다. 오늘은 그게 승리." },
-        { score: 36, title: "흉 ★★☆☆☆", body: "집중하려 해도 자꾸 딴생각이 납니다. 멀티태스킹은 금물.", advice: "한 번에 한 가지만 하세요. 탭을 닫고 집중 환경을 만드세요." },
-        { score: 43, title: "흉 ★★☆☆☆", body: "오늘 한 선택이 나중에 후회될 수 있습니다. 중요한 결정은 보류.", advice: "확신이 없으면 오늘은 결정을 미루세요. 내일이 더 좋습니다." },
-        { score: 49, title: "흉 ★★☆☆☆", body: "동료와 사소한 마찰이 생길 수 있습니다. 먼저 양보하면 편합니다.", advice: "이기려 하지 마세요. 오늘은 지는 게 이기는 겁니다." },
-        { score: 37, title: "흉 ★★☆☆☆", body: "피로가 쌓여 판단력이 흐려지는 날입니다. 중요 업무는 오전에 끝내세요.", advice: "오후에는 체력 소모가 적은 단순 업무로 채우세요." },
-        { score: 53, title: "흉 ★★☆☆☆", body: "기술적인 문제가 발생할 수 있습니다. 백업은 지금 당장 하세요.", advice: "중요한 파일 저장 습관, 오늘부터 다시 점검하세요." },
-        { score: 41, title: "흉 ★★☆☆☆", body: "커뮤니케이션 오류가 생기기 쉬운 날. 확인하고 또 확인하세요.", advice: "중요한 내용은 구두로만 하지 말고 텍스트로 남기세요." },
-        { score: 46, title: "흉 ★★☆☆☆", body: "기운이 없어서 모든 게 느리게 돌아가는 날입니다.", advice: "물을 충분히 마시세요. 탈수가 집중력을 떨어뜨립니다." },
-        { score: 39, title: "흉 ★★☆☆☆", body: "뭘 해도 답답한 기분이 드는 날. 환경 탓이 아니라 컨디션 탓입니다.", advice: "바깥 공기를 5분만 마시고 오세요. 리셋이 됩니다." },
-        { score: 35, title: "흉 ★★☆☆☆", body: "오늘은 버티는 것 자체가 목표입니다. 그것만으로도 충분합니다.", advice: "퇴근 후 맛있는 것 먹으며 오늘을 보상해주세요." },
+    function loadDataset({ url, cacheKey, fallback, validate }) {
+        let current = fallback;
+        try {
+            const cached = GM_getValue(cacheKey, null);
+            if (validate(cached)) current = cached;
+        } catch (error) {
+            console.warn(`[GPUN] ${cacheKey} 캐시 읽기 실패`, error);
+        }
 
-        /* ── 대흉 ── */
-        { score: 34, title: "대흉 ★☆☆☆☆", body: "오늘만큼은 새로운 일을 시작하지 마세요. 버티기 모드가 최선입니다.", advice: "생존이 목표입니다. 잘 버텨내는 것도 실력입니다." },
-        { score: 28, title: "대흉 ★☆☆☆☆", body: "전설의 나쁜 날. 그래도 퇴근은 반드시 옵니다. 믿으세요.", advice: "이 날이 지나면 반드시 좋은 날이 옵니다. 통계적으로 확실합니다." },
-        { score: 22, title: "대흉 ★☆☆☆☆", body: "모든 게 꼬이는 느낌. 계획이 틀어져도 당황하지 마세요.", advice: "플랜 B를 미리 생각해두세요. 오늘은 플랜 A가 잘 안 됩니다." },
-        { score: 18, title: "대흉 ★☆☆☆☆", body: "집중 완전 불가. 멍하니 모니터를 보는 시간이 많아집니다.", advice: "억지로 집중하려 하지 마세요. 잠깐 손을 놓는 것도 전략입니다." },
-        { score: 30, title: "대흉 ★☆☆☆☆", body: "팀장님 기분이 좋지 않습니다. 오늘은 최대한 안 걸리는 게 상책.", advice: "존재감을 지우세요. 오늘의 최고 전략은 무소음 작전입니다." },
-        { score: 25, title: "대흉 ★☆☆☆☆", body: "실수가 연달아 발생할 수 있습니다. 자책보다는 빠른 수습이 우선.", advice: "실수를 인정하고 빠르게 사과하면 오히려 신뢰가 올라갑니다." },
-        { score: 15, title: "대흉 ★☆☆☆☆", body: "모든 것이 느리게 돌아가는 날. 컴퓨터도 나도 함께 버벅입니다.", advice: "느려도 괜찮습니다. 재부팅이 필요한 날이니 무리하지 마세요." },
-        { score: 32, title: "대흉 ★☆☆☆☆", body: "오늘은 어디서 먹어도 맛이 없고 어디 가도 불편합니다.", advice: "기대를 포기하면 실망도 없습니다. 그냥 하루를 흘려보내세요." },
-        { score: 20, title: "대흉 ★☆☆☆☆", body: "기술적 장애, 인간관계 마찰, 업무 지연이 한 날에 몰릴 수 있습니다.", advice: "한 번에 하나씩만 해결하세요. 다 잡으려다 다 놓칩니다." },
-        { score: 12, title: "대흉 ★☆☆☆☆", body: "오늘은 그냥 살아있는 것만으로도 잘하고 있는 겁니다.", advice: "오늘 하루 무사히 끝내면 그게 대성공입니다. 응원합니다." },
-        { score: 27, title: "대흉 ★☆☆☆☆", body: "에너지가 바닥입니다. 억지로 채우려 하지 마세요.", advice: "수분 보충과 짧은 스트레칭. 최소한의 자기 돌봄을 챙기세요." },
-        { score: 33, title: "대흉 ★☆☆☆☆", body: "오늘은 뭔가 억울한 일이 생길 수 있습니다. 냉정함을 유지하세요.", advice: "감정적으로 반응하면 손해입니다. 일단 한 발 물러서세요." },
-        { score: 10, title: "대흉 ★☆☆☆☆", body: "역대급으로 안 풀리는 날. 이런 날이 있어야 좋은 날이 더 빛납니다.", advice: "오늘은 그냥 버티세요. 내일은 반드시 더 나아집니다." },
-        { score: 17, title: "대흉 ★☆☆☆☆", body: "판단 실수가 잦아질 수 있습니다. 중요한 결정은 무조건 보류하세요.", advice: "결정 미루기가 오늘의 최선입니다. 내일 맑은 정신으로 결정하세요." },
-        { score: 23, title: "대흉 ★☆☆☆☆", body: "오늘은 운이 따라주지 않습니다. 운에 기대던 일은 다음으로 미루세요.", advice: "기초와 기본에만 충실하세요. 화려한 시도는 오늘 금물." },
-        { score: 29, title: "대흉 ★☆☆☆☆", body: "뭔가 잘못될 것 같은 불안감이 드는 날. 그 예감이 맞을 수 있습니다.", advice: "리스크 있는 결정은 오늘 하지 마세요. 안전한 선택만 하세요." },
-        { score: 16, title: "대흉 ★☆☆☆☆", body: "상사에게 뭔가 지적을 받을 수 있습니다. 겸허하게 받아들이세요.", advice: "방어적으로 굴지 말고 배움의 기회로 삼으세요." },
-        { score: 21, title: "대흉 ★☆☆☆☆", body: "퇴근 직전에 일이 터질 수 있습니다. 마감 30분 전에 여유를 두세요.", advice: "일찍 마무리하고 검토하는 시간을 갖는 게 오늘의 전략." },
-        { score: 14, title: "대흉 ★☆☆☆☆", body: "오늘은 아무것도 하기 싫은 날. 그래도 최소한만 해내면 됩니다.", advice: "오늘 가장 중요한 일 단 하나만 정하고 그것만 하세요." },
-        { score: 11, title: "대흉 ★☆☆☆☆", body: "전설이 될 만한 최악의 하루. 훗날 웃으며 얘기할 에피소드가 탄생 중.", advice: "5년 후에 웃으면서 이야기할 수 있을 겁니다. 지금은 버티세요." },
-    ];
+        const refreshed = new Promise((resolve) => {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url,
+                responseType: 'json',
+                timeout: 3000,
+                onload: (response) => {
+                    const value = response.response;
+                    if (response.status < 200 || response.status >= 300 || !validate(value)) {
+                        console.warn(`[GPUN] ${cacheKey} 원격 데이터 검증 실패`);
+                        resolve(current);
+                        return;
+                    }
+                    current = value;
+                    try {
+                        GM_setValue(cacheKey, value);
+                    } catch (error) {
+                        console.warn(`[GPUN] ${cacheKey} 캐시 저장 실패`, error);
+                    }
+                    resolve(value);
+                },
+                onerror: () => {
+                    console.warn(`[GPUN] ${cacheKey} 원격 요청 실패`);
+                    resolve(current);
+                },
+                ontimeout: () => {
+                    console.warn(`[GPUN] ${cacheKey} 원격 요청 시간 초과`);
+                    resolve(current);
+                }
+            });
+        });
+
+        return { current, refreshed };
+    }
+
+    function initializeExternalData() {
+        const messages = loadDataset({
+            url: DATA_URLS.messages,
+            cacheKey: DATA_CACHE_KEYS.messages,
+            fallback: FALLBACK_MESSAGES,
+            validate: validateMessages
+        });
+        ALARM_MENT = messages.current.alarms;
+        STATUS_MENT = messages.current.status;
+        const messagesReady = messages.refreshed.then((value) => {
+            ALARM_MENT = value.alarms;
+            STATUS_MENT = value.status;
+            return value;
+        });
+
+        const fortunes = loadDataset({
+            url: DATA_URLS.fortunes,
+            cacheKey: DATA_CACHE_KEYS.fortunes,
+            fallback: FALLBACK_FORTUNES,
+            validate: validateFortunes
+        });
+        FORTUNE_DATA = fortunes.current;
+        const fortunesReady = fortunes.refreshed.then((value) => {
+            FORTUNE_DATA = value;
+            return value;
+        });
+
+        return { messagesReady, fortunesReady };
+    }
 
     /* ==========================================================================
        운세 상태 & 함수
@@ -292,8 +213,8 @@
         const today = new Date().toISOString().slice(0, 10);
         const nodeUrl = `${FIREBASE_FORTUNE_URL}/${USER_KEY}.json`;
         try {
-            const res = await fetch(nodeUrl);
-            const data = await res.json();
+            const res = await firebaseRequest('GET', nodeUrl);
+            const data = res.data;
             if (data && data.date === today) {
                 cachedFortune = data;
                 return;
@@ -309,11 +230,7 @@
             if (history.length > 10) history.splice(0, history.length - 10);
             fortune.history = history;
 
-            await fetch(nodeUrl, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(fortune)
-            });
+            await firebaseRequest('PUT', nodeUrl, fortune);
             cachedFortune = fortune;
         } catch (_) {
             const idx = getDailyFortuneSeed();
@@ -343,9 +260,9 @@
         if (isFetching || !document.getElementById(`${P}-root`)) return;
         isFetching = true;
         try {
-            const response = await fetch(FIREBASE_URL, { method: "GET" });
+            const response = await firebaseRequest('GET', FIREBASE_URL);
             if (!response.ok) return;
-            const data = await response.json();
+            const data = response.data;
             const chatBox = document.getElementById(`${P}-chat-display`);
             if (!chatBox) return;
             if (data !== null) {
@@ -367,11 +284,7 @@
             time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
         };
         try {
-            const r = await fetch(FIREBASE_URL, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload)
-            });
+            const r = await firebaseRequest('POST', FIREBASE_URL, payload);
             if (r.ok) fetchChat();
         } catch (_) {}
     }
@@ -380,7 +293,7 @@
         const keys = Object.keys(data);
         if (keys.length > 30) {
             keys.slice(0, keys.length - 30).forEach(key => {
-                fetch(`${FIREBASE_BASE_URL}/${key}.json`, { method: "DELETE" }).catch(() => {});
+                firebaseRequest('DELETE', `${FIREBASE_BASE_URL}/${key}.json`).catch(() => {});
             });
         }
     }
@@ -977,6 +890,8 @@
         setTimeout(() => Notification.requestPermission(), 4000);
     }
 
-    loadFortune();
+    const { messagesReady, fortunesReady } = initializeExternalData();
+    messagesReady.catch(() => {});
+    fortunesReady.then(() => loadFortune()).catch(() => loadFortune());
     setTimeout(run, 1500);
 })();
