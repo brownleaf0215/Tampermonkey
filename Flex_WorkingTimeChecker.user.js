@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Flex 근무시간 체크 - 밥자격 + 실제 퇴근시간 완벽판
-// @version      8.3.0
-// @description  2026 MZ 글래스모피즘 UI + 랜덤 뻘글 + 익명 채팅 + 오늘의 운세 100종 + 운세 히스토리 그래프
+// @version      9.0.0
+// @description  Aurora Ops 탭 UI + 위트있는 근무 멘트 + 오늘의 운세 150종 + 안전한 익명 채팅
 // @match        https://flex.team/time-tracking/my-work-record*
 // @updateURL    https://raw.githubusercontent.com/brownleaf0215/Tampermonkey/main/Flex_WorkingTimeChecker.user.js
 // @downloadURL  https://raw.githubusercontent.com/brownleaf0215/Tampermonkey/main/Flex_WorkingTimeChecker.user.js
@@ -72,25 +72,42 @@
         messages: 'gpun7_messages_v1',
         fortunes: 'gpun7_fortunes_v1'
     };
+    const SYSTEM_COPY_KEYS = [
+        'tenMinutesRemaining', 'workComplete', 'mealUnlocked', 'fortuneLoading',
+        'chatEmpty', 'chatLoading', 'chatError', 'chatPlaceholder', 'chatSending', 'chatSent'
+    ];
     const FALLBACK_MESSAGES = {
         alarms: {},
         status: {
-            level1: ['오늘도 천천히 시작해보세요.'],
-            level2: ['오후도 무리하지 말고 진행하세요.'],
-            level3: ['조금만 더 버티면 퇴근이 가까워집니다.'],
-            level4: ['퇴근까지 얼마 남지 않았습니다.'],
-            level5: ['오늘 근무를 완료했습니다.']
+            level1: Array(20).fill('업무 엔진 예열 중. 아직 소음만 정상입니다.'),
+            level2: Array(20).fill('업무가 굴러갑니다. 방향은 다음 회의에서 정할 예정입니다.'),
+            level3: Array(20).fill('절반을 넘겼습니다. 이제 하루가 우리 편인 척합니다.'),
+            level4: Array(20).fill('퇴근권이 가시권입니다. 새 안건 접근 금지.'),
+            level5: Array(20).fill('오늘치 노동력 납품 완료. 이제 사람 모드로 복귀하세요.')
+        },
+        system: {
+            tenMinutesRemaining: '퇴근 10분 전. 이제 새 일 잡으면 그 일이 상사입니다.',
+            workComplete: '오늘치 노동력 납품 완료. 퇴근 버튼과 상봉하세요.',
+            mealUnlocked: '야근 식대 해금. 오늘만큼은 사이드 추가도 업무입니다.',
+            fortuneLoading: '오늘의 운을 사내망에서 몰래 반입 중입니다.',
+            chatEmpty: '아직 조용합니다. 첫 월급루팡 선언문을 남겨보세요.',
+            chatLoading: '익명 동료들의 속마음을 불러오는 중입니다.',
+            chatError: '채팅 서버가 잠깐 커피 사러 갔습니다.',
+            chatPlaceholder: '업무 말고 아무 말 27자',
+            chatSending: '전송 중',
+            chatSent: '익명으로 무사히 흘려보냈습니다.'
         }
     };
     const FALLBACK_FORTUNES = [{
-        score: 70,
+        score: 58,
         title: '평 ★★★☆☆',
-        body: '무난하고 안정적인 하루입니다.',
-        advice: '평소의 리듬을 유지하세요.'
+        body: '운세 서버가 지각해도 하루는 정시 출근했습니다.',
+        advice: '기본 루틴만 지켜도 오늘은 충분히 선방입니다.'
     }];
 
     let ALARM_MENT = FALLBACK_MESSAGES.alarms;
     let STATUS_MENT = FALLBACK_MESSAGES.status;
+    let SYSTEM_COPY = FALLBACK_MESSAGES.system;
     let FORTUNE_DATA = FALLBACK_FORTUNES;
 
     function isNonEmptyString(value) {
@@ -98,22 +115,24 @@
     }
 
     function validateMessages(value) {
-        if (!value || typeof value !== 'object' || !value.alarms || !value.status) return false;
-        const alarmsValid = Object.entries(value.alarms).every(([time, alarm]) =>
-            /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time) &&
-            alarm && isNonEmptyString(alarm.title) &&
-            Array.isArray(alarm.bodies) && alarm.bodies.length > 0 &&
-            alarm.bodies.every(isNonEmptyString)
-        );
+        if (!value || typeof value !== 'object' || !value.alarms || !value.status || !value.system) return false;
+        const alarmsValid = Object.entries(value.alarms).length === 3 &&
+            Object.entries(value.alarms).every(([time, alarm]) =>
+                /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time) &&
+                alarm && isNonEmptyString(alarm.title) &&
+                Array.isArray(alarm.bodies) && alarm.bodies.length === 20 &&
+                alarm.bodies.every(isNonEmptyString)
+            );
         const statusValid = ['level1', 'level2', 'level3', 'level4', 'level5'].every((level) =>
-            Array.isArray(value.status[level]) && value.status[level].length > 0 &&
+            Array.isArray(value.status[level]) && value.status[level].length === 20 &&
             value.status[level].every(isNonEmptyString)
         );
-        return alarmsValid && statusValid;
+        const systemValid = SYSTEM_COPY_KEYS.every((key) => isNonEmptyString(value.system[key]));
+        return alarmsValid && statusValid && systemValid;
     }
 
     function validateFortunes(value) {
-        return Array.isArray(value) && value.length === 100 && value.every((item) =>
+        return Array.isArray(value) && value.length === 150 && value.every((item) =>
             item && Number.isInteger(item.score) && item.score >= 10 && item.score <= 99 &&
             isNonEmptyString(item.title) && isNonEmptyString(item.body) &&
             isNonEmptyString(item.advice)
@@ -173,9 +192,11 @@
         });
         ALARM_MENT = messages.current.alarms;
         STATUS_MENT = messages.current.status;
+        SYSTEM_COPY = messages.current.system;
         const messagesReady = messages.refreshed.then((value) => {
             ALARM_MENT = value.alarms;
             STATUS_MENT = value.status;
+            SYSTEM_COPY = value.system;
             return value;
         });
 
@@ -256,12 +277,44 @@
     /* ==========================================================================
        네트워크 로직
        ========================================================================== */
+    function escapeHTML(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#39;');
+    }
+
+    function setChatState(kind, detail = '') {
+        const chatBox = document.getElementById(`${P}-chat-display`);
+        if (!chatBox) return;
+        const copy = {
+            loading: SYSTEM_COPY.chatLoading,
+            empty: SYSTEM_COPY.chatEmpty,
+            error: SYSTEM_COPY.chatError
+        }[kind] || SYSTEM_COPY.chatError;
+        const retry = kind === 'error'
+            ? `<button class="${P}-retry" id="${P}-chat-retry" type="button">다시 연결</button>`
+            : '';
+        chatBox.innerHTML = `
+            <div class="${P}-chat-state ${P}-chat-state-${kind}">
+                <span>${escapeHTML(copy)}</span>
+                ${detail ? `<small>${escapeHTML(detail)}</small>` : ''}
+                ${retry}
+            </div>`;
+        document.getElementById(`${P}-chat-retry`)?.addEventListener('click', fetchChat);
+    }
+
     async function fetchChat() {
         if (isFetching || !document.getElementById(`${P}-root`)) return;
         isFetching = true;
         try {
             const response = await firebaseRequest('GET', FIREBASE_URL);
-            if (!response.ok) return;
+            if (!response.ok) {
+                setChatState('error', `응답 코드 ${response.status}`);
+                return;
+            }
             const data = response.data;
             const chatBox = document.getElementById(`${P}-chat-display`);
             if (!chatBox) return;
@@ -269,15 +322,17 @@
                 renderChat(data);
                 pruneChat(data);
             } else {
-                chatBox.innerHTML = `<div style="color:rgba(255,255,255,0.4);text-align:center;padding-top:30px;font-size:12px;">💬 첫 메시지를 남겨보세요!</div>`;
+                setChatState('empty');
             }
-        } catch (_) {}
+        } catch (_) {
+            setChatState('error');
+        }
         finally { isFetching = false; }
     }
 
     async function sendChat(message) {
         message = message.trim().substring(0, 27);
-        if (!message) return;
+        if (!message) return false;
         const payload = {
             name: NICKNAME,
             msg: message,
@@ -285,8 +340,12 @@
         };
         try {
             const r = await firebaseRequest('POST', FIREBASE_URL, payload);
-            if (r.ok) fetchChat();
-        } catch (_) {}
+            if (!r.ok) return false;
+            fetchChat();
+            return true;
+        } catch (_) {
+            return false;
+        }
     }
 
     function pruneChat(data) {
@@ -306,10 +365,10 @@
         keys.slice(-30).forEach(key => {
             const item = data[key];
             const isMe = item.name === NICKNAME;
-            html += `<div style="margin-bottom:6px;word-break:break-all;line-height:1.5;font-size:12px;">
-                <span style="color:${isMe ? '#a78bfa' : 'rgba(255,255,255,0.7)'};font-weight:600;">${item.name}</span>
-                <span style="color:rgba(255,255,255,0.9);margin-left:4px;">${item.msg}</span>
-                <span style="font-size:9px;color:rgba(255,255,255,0.3);margin-left:3px;">${item.time}</span>
+            html += `<div class="${P}-chat-msg${isMe ? ` ${P}-chat-msg-me` : ''}">
+                <span class="${P}-chat-name">${escapeHTML(item.name)}</span>
+                <span class="${P}-chat-text">${escapeHTML(item.msg)}</span>
+                <span class="${P}-chat-time">${escapeHTML(item.time)}</span>
             </div>`;
         });
         chatBox.innerHTML = html;
@@ -346,7 +405,6 @@
         if (Notification.permission === "granted") {
             new Notification(`[GPUN] ${title}`, {
                 body: `${body}\n(${displayTime})`,
-                icon: "https://win98icons.alexmeub.com/icons/png/msg_warning-0.png",
                 requireInteraction: true
             });
         }
@@ -373,18 +431,18 @@
         const m = Math.round(todayDone * 60);
         if (m >= 530 && m <= 535 && !triggered9Hour10Min) {
             triggered9Hour10Min = true;
-            triggerAlarm("퇴근 10분 전", pick(STATUS_MENT.level4));
+            triggerAlarm("퇴근선 10분 전", SYSTEM_COPY.tenMinutesRemaining);
         }
         if (m >= 540 && m <= 545 && !triggered9HourDone) {
             triggered9HourDone = true;
-            triggerAlarm("★ 퇴근 가능 ★", "지금 나가는 사람이 승리자입니다.");
+            triggerAlarm("근무 계약 이행 완료", SYSTEM_COPY.workComplete);
         }
     }
 
     function checkMealQualify(todayDone) {
         if (todayDone >= DAILY_GOAL + MEAL_QUALIFY_HOURS && !triggeredMeal) {
             triggeredMeal = true;
-            triggerAlarm("야근 식대 해금됨", "고생하셨습니다. 비싼 거 드세요.");
+            triggerAlarm("식대 퀘스트 해금", SYSTEM_COPY.mealUnlocked);
         }
     }
 
@@ -408,7 +466,7 @@
 
     function getRealEndTime(todayDone) {
         const remain = (9 - todayDone) * 3600000;
-        if (remain <= 0) return "지금 바로!";
+        if (remain <= 0) return "지금, 가방 집기";
         return new Date(Date.now() + remain).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
     }
 
@@ -421,235 +479,206 @@
        스타일
        ========================================================================== */
     function injectStyles() {
-        if (document.getElementById(`${P}-styles`)) return;
-        const style = document.createElement("style");
-        style.id = `${P}-styles`;
+        if (document.getElementById(`${P}-aurora-styles`)) return;
+        const style = document.createElement('style');
+        style.id = `${P}-aurora-styles`;
         style.textContent = `
-#${P}-root,
-#${P}-root *,
-#${P}-root *::before,
-#${P}-root *::after { box-sizing: border-box; }
-
+#${P}-root, #${P}-root *, #${P}-root *::before, #${P}-root *::after { box-sizing:border-box; }
 #${P}-root {
-    all: initial;
-    position: fixed; bottom: 20px; right: 20px; width: 360px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
-    font-size: 13px; color: #fff; z-index: 2147483647 !important;
-    user-select: none; line-height: 1.5; direction: ltr;
-    border-radius: 20px;
-    background: linear-gradient(145deg, rgba(30,27,75,0.92), rgba(45,40,95,0.95));
-    backdrop-filter: blur(28px) saturate(1.5);
-    -webkit-backdrop-filter: blur(28px) saturate(1.5);
-    border: 1px solid rgba(255,255,255,0.1);
-    box-shadow: 0 12px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04) inset;
-    overflow: hidden;
-    animation: ${P}-pop 0.35s cubic-bezier(0.34,1.56,0.64,1);
+    all: initial; position: fixed; right: 12px; bottom: 12px;
+    width: min(392px, calc(100vw - 24px)); max-height: calc(100vh - 24px);
+    overflow: hidden; color: #f8fafc; color-scheme: dark;
+    background: linear-gradient(155deg, rgba(15,21,48,.97), rgba(6,8,22,.95));
+    border: 1px solid rgba(174,184,212,.18); border-radius: 20px;
+    box-shadow: 0 24px 70px rgba(0,0,0,.58), 0 0 50px rgba(139,92,246,.14);
+    backdrop-filter: blur(24px) saturate(1.3); -webkit-backdrop-filter: blur(24px) saturate(1.3);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif;
+    font-size: 13px; line-height: 1.5; z-index: 2147483647 !important;
+    user-select: none; direction: ltr; animation: ${P}-aurora-enter 240ms ease-out;
 }
-@keyframes ${P}-pop {
-    from { opacity:0; transform: translateY(16px) scale(0.96); }
-    to   { opacity:1; transform: translateY(0) scale(1); }
-}
-#${P}-root.${P}-min #${P}-body { display:none; }
-#${P}-root.${P}-min { border-radius:14px; }
-
-#${P}-root .${P}-hd {
-    display:flex; justify-content:space-between; align-items:center;
-    padding:14px 16px 12px; cursor:move;
-    background: linear-gradient(135deg, rgba(139,92,246,0.18), rgba(56,189,248,0.1));
-    border-bottom:1px solid rgba(255,255,255,0.06);
-}
-#${P}-root .${P}-hd-l { display:flex; align-items:center; gap:10px; pointer-events:none; }
-#${P}-root .${P}-ico {
-    width:26px; height:26px; border-radius:8px;
-    background:linear-gradient(135deg,#8b5cf6,#3b82f6);
-    display:flex; align-items:center; justify-content:center;
-    font-size:13px; flex-shrink:0; box-shadow:0 2px 8px rgba(139,92,246,0.35);
-}
-#${P}-root .${P}-ttl {
-    font-size:14px; font-weight:700; letter-spacing:-0.3px;
-    background:linear-gradient(90deg,#c4b5fd,#7dd3fc);
-    -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
-}
-#${P}-root .${P}-bns { display:flex; gap:6px; }
-#${P}-root .${P}-cb {
-    all:unset; width:28px; height:28px; border-radius:8px; cursor:pointer;
-    background:rgba(255,255,255,0.07); color:rgba(255,255,255,0.45);
-    font-size:13px; display:flex; align-items:center; justify-content:center; transition:all 0.15s;
-}
-#${P}-root .${P}-cb:hover { background:rgba(255,255,255,0.14); color:#fff; }
-
-#${P}-body { padding:12px 14px 14px; display:flex; flex-direction:column; gap:10px; }
-
-#${P}-root .${P}-cd {
-    background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.07);
-    border-radius:14px; padding:14px; transition:background 0.2s;
-}
-#${P}-root .${P}-cd:hover { background:rgba(255,255,255,0.08); }
-#${P}-root .${P}-cl {
-    font-size:11px; font-weight:600; text-transform:uppercase;
-    letter-spacing:0.6px; color:rgba(255,255,255,0.35); margin-bottom:10px;
-    display:flex; align-items:center; gap:6px;
-}
-#${P}-root .${P}-rw {
-    display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;
-}
-#${P}-root .${P}-lb { font-size:12px; color:rgba(255,255,255,0.5); }
-#${P}-root .${P}-vl {
-    font-size:20px; font-weight:800; letter-spacing:-0.5px; font-variant-numeric:tabular-nums;
-}
-#${P}-root .${P}-vs { font-size:14px; font-weight:700; font-variant-numeric:tabular-nums; }
-#${P}-root .${P}-dm { font-size:11px; font-weight:400; color:rgba(255,255,255,0.25); }
-#${P}-root .${P}-sb { text-align:right; font-size:11px; color:rgba(255,255,255,0.3); margin-top:6px; }
-#${P}-root .${P}-sb b { color:rgba(255,255,255,0.65); font-weight:600; }
-
-#${P}-root .${P}-pb {
-    height:8px; border-radius:99px; background:rgba(255,255,255,0.07);
-    overflow:hidden; margin-top:6px; margin-bottom:2px;
-}
-#${P}-root .${P}-pb-l { height:14px; }
-#${P}-root .${P}-pf { height:100%; border-radius:99px; transition:width 0.8s cubic-bezier(0.4,0,0.2,1); }
-#${P}-root .${P}-pf-v  { background:linear-gradient(90deg,#8b5cf6,#a78bfa); box-shadow:0 0 14px rgba(139,92,246,0.35); }
-#${P}-root .${P}-pf-t  { background:linear-gradient(90deg,#14b8a6,#06b6d4); box-shadow:0 0 14px rgba(20,184,166,0.35); }
-#${P}-root .${P}-pf-a  { background:linear-gradient(90deg,#f59e0b,#fbbf24); box-shadow:0 0 14px rgba(245,158,11,0.35); }
-#${P}-root .${P}-pf-r  { background:linear-gradient(90deg,#f43f5e,#fb7185); box-shadow:0 0 14px rgba(244,63,94,0.35); }
-#${P}-root .${P}-pf-g  { background:linear-gradient(90deg,#10b981,#34d399); box-shadow:0 0 14px rgba(16,185,129,0.35); }
-
-#${P}-root .${P}-bg {
-    display:inline-flex; align-items:center; gap:5px;
-    padding:4px 12px; border-radius:99px; font-size:12px; font-weight:700;
-}
-#${P}-root .${P}-bg-ok {
-    background:linear-gradient(135deg,rgba(139,92,246,0.25),rgba(59,130,246,0.2));
-    border:1px solid rgba(139,92,246,0.3); color:#c4b5fd;
-}
-#${P}-root .${P}-bg-wt {
-    background:rgba(244,63,94,0.12); border:1px solid rgba(244,63,94,0.2); color:#fda4af;
-}
-
-#${P}-root .${P}-st {
-    padding:10px 14px; border-radius:12px;
-    background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05);
-    font-size:12px; color:rgba(255,255,255,0.5);
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-    text-align:center; font-weight:500;
-}
-
-/* ── Fortune ── */
-#${P}-root .${P}-ft-score {
-    font-size:28px; font-weight:800; letter-spacing:-1px; font-variant-numeric:tabular-nums;
-    background:linear-gradient(90deg,#fbbf24,#f97316);
-    -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
-}
-#${P}-root .${P}-ft-title { font-size:13px; font-weight:700; color:#c4b5fd; }
-#${P}-root .${P}-ft-body  { font-size:11px; color:rgba(255,255,255,0.5); line-height:1.7; margin-top:6px; }
-#${P}-root .${P}-ft-advice {
-    font-size:11px; color:rgba(255,255,255,0.7); line-height:1.6; margin-top:8px;
-    padding:7px 10px; border-radius:8px;
-    background:rgba(139,92,246,0.1); border-left:2px solid rgba(139,92,246,0.45);
-}
-#${P}-root .${P}-ft-bar {
-    height:6px; border-radius:99px; background:rgba(255,255,255,0.07); overflow:hidden; margin-top:10px;
-}
-#${P}-root .${P}-ft-bar-fill {
-    height:100%; border-radius:99px;
-    background:linear-gradient(90deg,#8b5cf6,#f59e0b,#f97316);
-    box-shadow:0 0 12px rgba(251,191,36,0.3);
-    transition:width 1s cubic-bezier(0.4,0,0.2,1);
-}
-
-/* ── Fortune History Chart ── */
-#${P}-root .${P}-ft-hist { margin-top:14px; }
-#${P}-root .${P}-ft-hist-title {
-    font-size:10px; font-weight:600; text-transform:uppercase;
-    letter-spacing:0.6px; color:rgba(255,255,255,0.3); margin-bottom:8px;
-}
-#${P}-root .${P}-ft-chart {
-    display:flex; align-items:flex-end; gap:4px;
-    height:70px; padding:0 2px;
-}
-#${P}-root .${P}-ft-bar-wrap {
-    flex:1; display:flex; flex-direction:column;
-    align-items:center; gap:3px; min-width:0;
-}
-#${P}-root .${P}-ft-bar-col {
-    width:100%; border-radius:3px 3px 2px 2px;
-    transition:height 0.7s cubic-bezier(0.4,0,0.2,1);
-    min-height:3px;
-}
-#${P}-root .${P}-ft-bar-lbl {
-    font-size:9px; color:rgba(255,255,255,0.28);
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-    width:100%; text-align:center; font-variant-numeric:tabular-nums;
-}
-#${P}-root .${P}-ft-bar-score {
-    font-size:9px; color:rgba(255,255,255,0.4);
-    font-weight:600; font-variant-numeric:tabular-nums;
-    line-height:1;
-}
-#${P}-root .${P}-ft-bar-today .${P}-ft-bar-lbl {
-    color:rgba(255,255,255,0.65); font-weight:700;
-}
-#${P}-root .${P}-ft-bar-today .${P}-ft-bar-score {
-    color:rgba(255,255,255,0.75);
-}
-
-/* ── Chat ── */
-#${P}-root .${P}-cht {
-    height:110px; overflow-y:auto; padding:8px 10px;
-    border-radius:10px; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.06);
-    font-size:12px; user-select:text;
-    scrollbar-width:thin; scrollbar-color:rgba(255,255,255,0.12) transparent;
-}
-#${P}-root .${P}-cht::-webkit-scrollbar { width:5px; }
-#${P}-root .${P}-cht::-webkit-scrollbar-track { background:transparent; }
-#${P}-root .${P}-cht::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.12); border-radius:99px; }
-#${P}-root .${P}-cr { display:flex; gap:6px; margin-top:8px; }
-#${P}-root .${P}-ci {
-    all:unset; flex:1; padding:9px 12px; border-radius:10px;
-    border:1px solid rgba(255,255,255,0.08); background:rgba(255,255,255,0.05); color:#fff;
-    font-size:12px; font-family:inherit; transition:border-color 0.2s;
-}
-#${P}-root .${P}-ci::placeholder { color:rgba(255,255,255,0.2); }
-#${P}-root .${P}-ci:focus { border-color:rgba(139,92,246,0.5); }
-#${P}-root .${P}-sn {
-    all:unset; padding:9px 18px; border-radius:10px; cursor:pointer;
-    background:linear-gradient(135deg,#8b5cf6,#6366f1); color:#fff;
-    font-size:12px; font-weight:600; font-family:inherit; white-space:nowrap;
-    transition:all 0.15s; box-shadow:0 3px 10px rgba(139,92,246,0.3);
-}
-#${P}-root .${P}-sn:hover { box-shadow:0 5px 16px rgba(139,92,246,0.5); transform:translateY(-1px); }
-#${P}-root .${P}-sn:active { transform:translateY(0); }
-        `;
+#${P}-root::before, #${P}-root::after { content:""; position:absolute; pointer-events:none; z-index:0; }
+#${P}-root::before { width:220px; height:180px; right:-90px; top:-80px; background:radial-gradient(circle,#8b5cf6 0,transparent 68%); opacity:.52; }
+#${P}-root::after { width:190px; height:170px; left:-100px; bottom:30px; background:radial-gradient(circle,#22d3ee 0,transparent 70%); opacity:.18; }
+@keyframes ${P}-aurora-enter { from { opacity:0; transform:translateY(12px) scale(.98); } to { opacity:1; transform:none; } }
+#${P}-root button, #${P}-root input { font:inherit; }
+#${P}-root button { min-width:44px; min-height:44px; }
+#${P}-root :focus-visible { outline:3px solid #22d3ee; outline-offset:2px; }
+#${P}-root [hidden] { display:none !important; }
+#${P}-root svg { width:18px; height:18px; display:block; }
+#${P}-root .${P}-hd { position:relative; z-index:2; display:flex; align-items:center; justify-content:space-between; min-height:58px; padding:7px 10px 7px 14px; cursor:move; border-bottom:1px solid rgba(174,184,212,.12); background:transparent; }
+#${P}-root .${P}-brand { display:flex; align-items:center; gap:10px; min-width:0; pointer-events:none; }
+#${P}-root .${P}-brand-mark { width:32px; height:32px; display:grid; place-items:center; border-radius:10px; color:#fff; background:linear-gradient(135deg,#8b5cf6,#4f46e5 58%,#22d3ee); box-shadow:0 8px 24px rgba(139,92,246,.36); }
+#${P}-root .${P}-brand-mark svg { width:17px; height:17px; }
+#${P}-root .${P}-eyebrow { display:block; color:#aeb8d4; font-size:9px; font-weight:800; letter-spacing:1.4px; text-transform:uppercase; }
+#${P}-root .${P}-title { display:block; color:#f8fafc; font-size:14px; font-weight:850; letter-spacing:-.2px; }
+#${P}-root .${P}-controls { display:flex; gap:4px; }
+#${P}-root .${P}-icon-btn { all:unset; min-width:44px; min-height:44px; display:grid; place-items:center; cursor:pointer; border-radius:10px; color:#aeb8d4; transition:transform 200ms ease,background 200ms ease,color 200ms ease; }
+#${P}-root .${P}-icon-btn:hover { color:#f8fafc; background:rgba(255,255,255,.08); transform:translateY(-1px); }
+#${P}-root .${P}-mini { display:none; align-items:center; gap:10px; min-width:0; }
+#${P}-root .${P}-mini strong { color:#f8fafc; font-size:15px; font-variant-numeric:tabular-nums; }
+#${P}-root .${P}-mini span { color:#aeb8d4; font-size:11px; white-space:nowrap; }
+#${P}-root.${P}-min { width:min(310px,calc(100vw - 24px)); }
+#${P}-root.${P}-min #${P}-body, #${P}-root.${P}-min .${P}-brand-copy { display:none; }
+#${P}-root.${P}-min .${P}-mini { display:flex; }
+#${P}-body { position:relative; z-index:1; display:block; padding:0; max-height:calc(100vh - 88px); overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:rgba(174,184,212,.25) transparent; }
+#${P}-root .${P}-hero { display:grid; grid-template-columns:104px 1fr; gap:14px; align-items:center; padding:16px 16px 12px; }
+#${P}-root .${P}-ring { --daily-progress:0deg; width:96px; aspect-ratio:1; position:relative; display:grid; place-items:center; border-radius:50%; background:conic-gradient(#22d3ee 0deg,#8b5cf6 var(--daily-progress),rgba(174,184,212,.12) var(--daily-progress)); box-shadow:0 0 34px rgba(34,211,238,.12); }
+#${P}-root .${P}-ring::after { content:""; position:absolute; inset:8px; border-radius:50%; background:linear-gradient(145deg,#111733,#080b1d); box-shadow:inset 0 0 0 1px rgba(255,255,255,.05); }
+#${P}-root .${P}-ring-copy { position:relative; z-index:1; text-align:center; }
+#${P}-root .${P}-ring-copy strong { display:block; font-size:22px; line-height:1.05; font-weight:900; letter-spacing:-1px; font-variant-numeric:tabular-nums; }
+#${P}-root .${P}-ring-copy span { display:block; margin-top:3px; color:#aeb8d4; font-size:9px; font-weight:700; letter-spacing:.5px; }
+#${P}-root .${P}-hero-info { min-width:0; }
+#${P}-root .${P}-hero-kicker { display:flex; align-items:center; gap:7px; color:#22d3ee; font-size:10px; font-weight:800; letter-spacing:.8px; }
+#${P}-root .${P}-hero-kicker::before { content:""; width:6px; height:6px; border-radius:50%; background:#34d399; box-shadow:0 0 12px #34d399; }
+#${P}-root .${P}-hero-head { display:flex; align-items:flex-end; justify-content:space-between; gap:8px; margin-top:5px; }
+#${P}-root .${P}-hero-head strong { font-size:25px; line-height:1.1; font-weight:900; letter-spacing:-1px; font-variant-numeric:tabular-nums; }
+#${P}-root .${P}-hero-head span { color:#aeb8d4; font-size:11px; padding-bottom:2px; }
+#${P}-root .${P}-hero-meta { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:10px; }
+#${P}-root .${P}-hero-meta div { min-width:0; padding:7px 9px; border:1px solid rgba(174,184,212,.13); border-radius:10px; background:rgba(255,255,255,.045); }
+#${P}-root .${P}-hero-meta span { display:block; color:#aeb8d4; font-size:9px; }
+#${P}-root .${P}-hero-meta strong { display:block; margin-top:1px; color:#f8fafc; font-size:12px; font-variant-numeric:tabular-nums; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#${P}-root .${P}-status { margin:0 16px 12px; padding:9px 11px; border-left:2px solid #8b5cf6; border-radius:10px; color:#dbe4ff; background:linear-gradient(90deg,rgba(139,92,246,.14),rgba(34,211,238,.05)); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#${P}-root .${P}-tabs { display:grid; grid-template-columns:repeat(3,1fr); gap:5px; margin:0 12px; padding:5px; border:1px solid rgba(174,184,212,.12); border-radius:14px; background:rgba(0,0,0,.2); }
+#${P}-root .${P}-tab { all:unset; min-height:44px; display:flex; align-items:center; justify-content:center; gap:7px; border-radius:10px; cursor:pointer; color:#aeb8d4; font-size:12px; font-weight:750; transition:transform 200ms ease,background 200ms ease,color 200ms ease; }
+#${P}-root .${P}-tab:hover { color:#f8fafc; background:rgba(255,255,255,.05); }
+#${P}-root .${P}-tab[aria-selected="true"] { color:#fff; background:linear-gradient(135deg,rgba(139,92,246,.9),rgba(79,70,229,.82)); box-shadow:0 8px 22px rgba(79,70,229,.24); }
+#${P}-root .${P}-panel { padding:12px; animation:${P}-panel-in 220ms ease-out; }
+@keyframes ${P}-panel-in { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:none; } }
+#${P}-root .${P}-bento { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+#${P}-root .${P}-card { min-width:0; padding:13px; border:1px solid rgba(174,184,212,.13); border-radius:14px; background:linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.025)); box-shadow:inset 0 1px rgba(255,255,255,.04); }
+#${P}-root .${P}-card-wide { grid-column:1/-1; }
+#${P}-root .${P}-card-label { display:flex; align-items:center; justify-content:space-between; gap:6px; color:#aeb8d4; font-size:10px; font-weight:750; letter-spacing:.35px; }
+#${P}-root .${P}-value { display:block; margin-top:7px; color:#f8fafc; font-size:19px; font-weight:900; letter-spacing:-.5px; font-variant-numeric:tabular-nums; }
+#${P}-root .${P}-sub { display:block; margin-top:3px; color:#aeb8d4; font-size:10px; }
+#${P}-root .${P}-bar { height:7px; margin-top:9px; overflow:hidden; border-radius:99px; background:rgba(174,184,212,.12); }
+#${P}-root .${P}-bar > i { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,#8b5cf6,#22d3ee); transform-origin:left; }
+#${P}-root .${P}-bar-amber > i { background:linear-gradient(90deg,#8b5cf6,#fbbf24); }
+#${P}-root .${P}-bar-coral > i { background:linear-gradient(90deg,#fb7185,#fbbf24); }
+#${P}-root .${P}-badge { display:inline-flex; align-items:center; min-height:23px; padding:2px 8px; border-radius:99px; color:#a7f3d0; background:rgba(52,211,153,.12); border:1px solid rgba(52,211,153,.2); font-size:9px; font-weight:800; }
+#${P}-root .${P}-fortune-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+#${P}-root .${P}-fortune-title { color:#c4b5fd; font-size:14px; font-weight:850; }
+#${P}-root .${P}-fortune-score { color:#fbbf24; font-size:34px; line-height:1; font-weight:950; letter-spacing:-1px; font-variant-numeric:tabular-nums; }
+#${P}-root .${P}-fortune-body { margin:12px 0 0; color:#f8fafc; font-size:13px; line-height:1.75; }
+#${P}-root .${P}-fortune-advice { margin-top:12px; padding:10px 11px; border-left:2px solid #22d3ee; border-radius:10px; color:#dbe4ff; background:rgba(34,211,238,.07); font-size:11px; line-height:1.65; }
+#${P}-root .${P}-ft-hist { margin-top:16px; }
+#${P}-root .${P}-ft-hist-title { color:#aeb8d4; font-size:10px; font-weight:800; letter-spacing:.4px; }
+#${P}-root .${P}-ft-chart { display:flex; align-items:flex-end; gap:4px; height:76px; margin-top:8px; }
+#${P}-root .${P}-ft-bar-wrap { flex:1; min-width:0; display:flex; flex-direction:column; align-items:center; gap:3px; }
+#${P}-root .${P}-ft-bar-col { width:100%; min-height:3px; border-radius:4px 4px 2px 2px; }
+#${P}-root .${P}-ft-bar-lbl, #${P}-root .${P}-ft-bar-score { width:100%; overflow:hidden; color:#aeb8d4; font-size:8px; text-align:center; text-overflow:ellipsis; white-space:nowrap; font-variant-numeric:tabular-nums; }
+#${P}-root .${P}-ft-bar-today .${P}-ft-bar-lbl, #${P}-root .${P}-ft-bar-today .${P}-ft-bar-score { color:#f8fafc; font-weight:800; }
+#${P}-root .${P}-skeleton { position:relative; min-height:220px; display:grid; place-items:center; color:#aeb8d4; text-align:center; }
+#${P}-root .${P}-skeleton::before { content:""; position:absolute; top:78px; width:110px; height:8px; border-radius:99px; background:linear-gradient(90deg,rgba(255,255,255,.05),rgba(255,255,255,.2),rgba(255,255,255,.05)); animation:${P}-shimmer 1.2s ease-in-out infinite; }
+@keyframes ${P}-shimmer { 50% { transform:scaleX(1.4); opacity:.45; } }
+#${P}-root .${P}-chat-card { padding:13px; border:1px solid rgba(174,184,212,.13); border-radius:14px; background:rgba(255,255,255,.035); }
+#${P}-root .${P}-chat-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:10px; }
+#${P}-root .${P}-chat-top strong { display:block; font-size:13px; }
+#${P}-root .${P}-chat-top span { display:block; margin-top:2px; color:#aeb8d4; font-size:10px; }
+#${P}-root .${P}-online { color:#34d399; font-size:9px; font-weight:800; }
+#${P}-root .${P}-cht { height:178px; overflow-y:auto; padding:10px; border:1px solid rgba(174,184,212,.12); border-radius:10px; background:rgba(0,0,0,.28); user-select:text; scrollbar-width:thin; scrollbar-color:rgba(174,184,212,.22) transparent; }
+#${P}-root .${P}-chat-msg { display:grid; grid-template-columns:auto 1fr auto; gap:6px; align-items:baseline; margin-bottom:8px; font-size:11px; }
+#${P}-root .${P}-chat-name { color:#aeb8d4; font-weight:800; }
+#${P}-root .${P}-chat-msg-me .${P}-chat-name { color:#c4b5fd; }
+#${P}-root .${P}-chat-text { min-width:0; color:#f8fafc; word-break:break-word; }
+#${P}-root .${P}-chat-time { color:#7f8aa8; font-size:8px; }
+#${P}-root .${P}-chat-state { min-height:154px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:9px; padding:18px; color:#aeb8d4; text-align:center; }
+#${P}-root .${P}-chat-state small { color:#7f8aa8; }
+#${P}-root .${P}-retry { border:1px solid rgba(34,211,238,.28); border-radius:10px; color:#a5f3fc; background:rgba(34,211,238,.08); cursor:pointer; }
+#${P}-root .${P}-field-head { display:flex; justify-content:space-between; align-items:center; margin-top:11px; }
+#${P}-root .${P}-field-head label { color:#dbe4ff; font-size:10px; font-weight:750; }
+#${P}-root .${P}-count { color:#aeb8d4; font-size:9px; font-variant-numeric:tabular-nums; }
+#${P}-root .${P}-compose { display:grid; grid-template-columns:1fr auto; gap:7px; margin-top:5px; }
+#${P}-root .${P}-input { min-width:0; min-height:44px; padding:0 12px; border:1px solid rgba(174,184,212,.16); border-radius:10px; outline:0; color:#f8fafc; background:rgba(255,255,255,.05); }
+#${P}-root .${P}-input::placeholder { color:#7f8aa8; }
+#${P}-root .${P}-send { min-width:76px; padding:0 13px; border:0; border-radius:10px; color:#fff; background:linear-gradient(135deg,#8b5cf6,#4f46e5); box-shadow:0 8px 18px rgba(79,70,229,.28); cursor:pointer; font-weight:800; transition:transform 200ms ease,opacity 200ms ease; }
+#${P}-root .${P}-send:hover { transform:translateY(-1px); }
+#${P}-root .${P}-send:disabled { opacity:.55; cursor:wait; transform:none; }
+#${P}-root .${P}-live { min-height:17px; margin-top:5px; color:#aeb8d4; font-size:9px; }
+@media (max-width:420px) { #${P}-root .${P}-hero { grid-template-columns:92px 1fr; padding-inline:12px; } #${P}-root .${P}-ring { width:86px; } }
+@media (prefers-reduced-motion: reduce) {
+    #${P}-root, #${P}-root *, #${P}-root *::before, #${P}-root *::after {
+        animation-duration:.01ms !important; animation-iteration-count:1 !important;
+        transition-duration:.01ms !important; scroll-behavior:auto !important;
+    }
+}`;
         document.head.appendChild(style);
     }
 
-    /* ==========================================================================
-       HTML
-       ========================================================================== */
-    function buildHTML() {
+    function icon(name) {
+        const paths = {
+            bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/>',
+            minus: '<path d="M5 12h14"/>',
+            close: '<path d="m6 6 12 12M18 6 6 18"/>',
+            clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+            spark: '<path d="m12 3 1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3Z"/><path d="m19 15 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z"/>',
+            chat: '<path d="M4 5h16v11H8l-4 4V5Z"/>'
+        };
+        return `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[name] || paths.bolt}</svg>`;
+    }
+
+    function buildAuroraHTML() {
         return `
         <div class="${P}-hd" id="${P}-drag">
-            <div class="${P}-hd-l">
-                <div class="${P}-ico">⚡</div>
-                <span class="${P}-ttl">GPUN Timer</span>
+            <div class="${P}-brand">
+                <span class="${P}-brand-mark">${icon('bolt')}</span>
+                <span class="${P}-brand-copy"><span class="${P}-eyebrow">Aurora Ops</span><span class="${P}-title">GPUN Timer</span></span>
+                <span class="${P}-mini"><strong id="${P}-mini-worked">0:00</strong><span id="${P}-mini-remain">9:00 남음</span></span>
             </div>
-            <div class="${P}-bns">
-                <button class="${P}-cb" id="${P}-btn-min" title="최소화">─</button>
-                <button class="${P}-cb" id="${P}-btn-close" title="닫기">✕</button>
+            <div class="${P}-controls">
+                <button class="${P}-icon-btn" id="${P}-btn-min" type="button" aria-label="위젯 최소화" aria-expanded="true">${icon('minus')}</button>
+                <button class="${P}-icon-btn" id="${P}-btn-close" type="button" aria-label="위젯 닫기">${icon('close')}</button>
             </div>
         </div>
         <div id="${P}-body">
-            <div id="${P}-stats"></div>
-            <div class="${P}-cd">
-                <div class="${P}-cl">💬 익명 채팅</div>
-                <div class="${P}-cht" id="${P}-chat-display"></div>
-                <div class="${P}-cr">
-                    <input type="text" class="${P}-ci" id="${P}-chat-input"
-                           maxlength="27" placeholder="아무말 대잔치 (27자)" autocomplete="off">
-                    <button class="${P}-sn" id="${P}-chat-send">전송</button>
-                </div>
+            <section class="${P}-hero" id="${P}-hero" aria-label="오늘 근무 요약">
+                <div class="${P}-ring" id="${P}-daily-ring"><div class="${P}-ring-copy"><strong id="${P}-ring-value">0:00</strong><span>오늘 근무</span></div></div>
+                <div class="${P}-hero-info"><div class="${P}-hero-kicker">LIVE WORKFLOW</div><div class="${P}-hero-head"><strong id="${P}-remain-value">9:00 남음</strong><span>/ 9:00</span></div><div class="${P}-hero-meta"><div><span>예상 퇴근</span><strong id="${P}-end-value">계산 중</strong></div><div><span>오늘 상태</span><strong id="${P}-done-value">예열 중</strong></div></div></div>
+            </section>
+            <div class="${P}-status" id="${P}-status-line">업무 엔진과 협상 중입니다.</div>
+            <div class="${P}-tabs" role="tablist" aria-label="GPUN Timer 메뉴">
+                <button class="${P}-tab" id="${P}-tab-work" type="button" role="tab" aria-selected="true" aria-controls="${P}-panel-work" data-tab="work">${icon('clock')}<span>근무</span></button>
+                <button class="${P}-tab" id="${P}-tab-fortune" type="button" role="tab" aria-selected="false" aria-controls="${P}-panel-fortune" data-tab="fortune" tabindex="-1">${icon('spark')}<span>운세</span></button>
+                <button class="${P}-tab" id="${P}-tab-chat" type="button" role="tab" aria-selected="false" aria-controls="${P}-panel-chat" data-tab="chat" tabindex="-1">${icon('chat')}<span>채팅</span></button>
             </div>
+            <section class="${P}-panel" id="${P}-panel-work" role="tabpanel" aria-labelledby="${P}-tab-work" data-panel="work"><div id="${P}-work-content"></div></section>
+            <section class="${P}-panel" id="${P}-panel-fortune" role="tabpanel" aria-labelledby="${P}-tab-fortune" data-panel="fortune" hidden><div id="${P}-fortune-content"></div></section>
+            <section class="${P}-panel" id="${P}-panel-chat" role="tabpanel" aria-labelledby="${P}-tab-chat" data-panel="chat" hidden>
+                <div class="${P}-chat-card"><div class="${P}-chat-top"><div><strong>익명 라운지</strong><span>직급은 숨기고 드립만 출근합니다.</span></div><b class="${P}-online">LIVE</b></div><div class="${P}-cht" id="${P}-chat-display"></div><div class="${P}-field-head"><label for="${P}-chat-input">익명 메시지</label><span class="${P}-count" id="${P}-chat-count">0/27</span></div><div class="${P}-compose"><input type="text" class="${P}-input" id="${P}-chat-input" aria-label="채팅 메시지" maxlength="27" placeholder="${escapeHTML(SYSTEM_COPY.chatPlaceholder)}" autocomplete="off"><button class="${P}-send" id="${P}-chat-send" type="button">보내기</button></div><div class="${P}-live" id="${P}-chat-live" aria-live="polite"></div></div>
+            </section>
         </div>`;
+    }
+
+    let selectedTab = 'work';
+
+    function selectTab(name, focus = false) {
+        selectedTab = name;
+        document.querySelectorAll(`#${P}-root [role="tab"]`).forEach((tab) => {
+            const active = tab.dataset.tab === name;
+            tab.setAttribute('aria-selected', String(active));
+            tab.tabIndex = active ? 0 : -1;
+            if (active && focus) tab.focus();
+        });
+        document.querySelectorAll(`#${P}-root [role="tabpanel"]`).forEach((panel) => {
+            panel.hidden = panel.dataset.panel !== name;
+        });
+    }
+
+    function initTabs() {
+        const tabs = [...document.querySelectorAll(`#${P}-root [role="tab"]`)];
+        tabs.forEach((tab, index) => {
+            tab.addEventListener('click', () => selectTab(tab.dataset.tab));
+            tab.addEventListener('keydown', (event) => {
+                const target = event.key === 'Home' ? 0
+                    : event.key === 'End' ? tabs.length - 1
+                    : event.key === 'ArrowRight' ? (index + 1) % tabs.length
+                    : event.key === 'ArrowLeft' ? (index - 1 + tabs.length) % tabs.length
+                    : -1;
+                if (target >= 0) {
+                    event.preventDefault();
+                    selectTab(tabs[target].dataset.tab, true);
+                }
+            });
+        });
     }
 
     /* ==========================================================================
@@ -693,26 +722,90 @@
         }
 
         const chartItems = all.map(item => {
-            const barH = Math.max(4, Math.round((item.score / 100) * MAX_BAR_H));
-            const color = scoreColor(item.score);
+            const score = Math.max(0, Math.min(100, Number(item.score) || 0));
+            const barH = Math.max(4, Math.round((score / 100) * MAX_BAR_H));
+            const color = scoreColor(score);
             const isToday = item.date === 'today';
-            const label = isToday ? '오늘' : item.date.slice(5).replace('-', '/');
+            const label = isToday ? '오늘' : String(item.date || '').slice(5).replace('-', '/');
             const todayCls = isToday ? ` ${P}-ft-bar-today` : '';
             const opacity = isToday ? '1' : '0.5';
             return `
             <div class="${P}-ft-bar-wrap${todayCls}">
-                <span class="${P}-ft-bar-score">${item.score}</span>
+                <span class="${P}-ft-bar-score">${score}</span>
                 <div class="${P}-ft-bar-col"
                      style="height:${barH}px;background:${color};opacity:${opacity};"></div>
-                <span class="${P}-ft-bar-lbl">${label}</span>
+                <span class="${P}-ft-bar-lbl">${escapeHTML(label)}</span>
             </div>`;
         }).join('');
 
         return `
         <div class="${P}-ft-hist">
-            <div class="${P}-ft-hist-title">최근 운세 점수</div>
+            <div class="${P}-ft-hist-title">최근 10일 운세 로그</div>
             <div class="${P}-ft-chart">${chartItems}</div>
         </div>`;
+    }
+
+    function renderDashboard(model) {
+        const ring = document.getElementById(`${P}-daily-ring`);
+        const workContent = document.getElementById(`${P}-work-content`);
+        const fortuneContent = document.getElementById(`${P}-fortune-content`);
+        if (!ring || !workContent || !fortuneContent) return;
+
+        ring.style.setProperty('--daily-progress', `${model.dailyPct * 3.6}deg`);
+        document.getElementById(`${P}-ring-value`).textContent = fmt(model.todayDone);
+        document.getElementById(`${P}-remain-value`).textContent = model.isDone ? '퇴근 가능' : `${fmt(model.remaining)} 남음`;
+        document.getElementById(`${P}-end-value`).textContent = model.endTime;
+        document.getElementById(`${P}-done-value`).textContent = model.isDone ? '납품 완료' : `${Math.round(model.dailyPct)}% 진행`;
+        document.getElementById(`${P}-status-line`).textContent = model.statusMsg;
+        document.getElementById(`${P}-mini-worked`).textContent = fmt(model.todayDone);
+        document.getElementById(`${P}-mini-remain`).textContent = model.isDone ? '퇴근 가능' : `${fmt(model.remaining)} 남음`;
+
+        const mealValue = model.isMealOk ? '식대 해금' : model.isDone ? `${fmt(DAILY_GOAL + MEAL_QUALIFY_HOURS - model.todayDone)} 남음` : '9시간 후 등장';
+        const mealCopy = model.isMealOk ? SYSTEM_COPY.mealUnlocked : model.isDone ? '조금만 더 버티면 회사 카드가 말랑해집니다.' : '정시 퇴근이 우선, 식대는 숨은 보너스입니다.';
+        workContent.innerHTML = `
+            <div class="${P}-bento">
+                <article class="${P}-card ${P}-card-wide">
+                    <div class="${P}-card-label"><span>주간 누적</span><span class="${P}-badge">목표 53h</span></div>
+                    <strong class="${P}-value">${fmt(model.realWeekly)} <small>/ 53:00</small></strong>
+                    <div class="${P}-bar"><i style="width:${model.weeklyPct}%"></i></div>
+                    <span class="${P}-sub">이번 주도 캘린더와 정면 승부 중입니다.</span>
+                </article>
+                <article class="${P}-card">
+                    <div class="${P}-card-label"><span>OT 달성</span><span>${Math.round(model.extraPct)}%</span></div>
+                    <strong class="${P}-value">${fmt(model.extraDone)}</strong>
+                    <div class="${P}-bar ${P}-bar-amber"><i style="width:${model.extraPct}%"></i></div>
+                    <span class="${P}-sub">하루 평균 ${model.avgExtra <= 0 ? '0:00' : fmt(model.avgExtra)} 추가</span>
+                </article>
+                <article class="${P}-card">
+                    <div class="${P}-card-label"><span>야근 식대</span><span>${Math.round(model.mealPct)}%</span></div>
+                    <strong class="${P}-value">${mealValue}</strong>
+                    <div class="${P}-bar ${model.isMealOk ? '' : `${P}-bar-coral`}"><i style="width:${model.mealPct}%"></i></div>
+                    <span class="${P}-sub">${escapeHTML(mealCopy)}</span>
+                </article>
+                <article class="${P}-card ${P}-card-wide">
+                    <div class="${P}-card-label"><span>오늘의 작전 메모</span><span>${model.isDone ? 'COMPLETE' : 'IN PROGRESS'}</span></div>
+                    <strong class="${P}-value">${model.isDone ? '사람 모드 복귀 승인' : '새 일보다 닫을 일을 사랑할 시간'}</strong>
+                    <span class="${P}-sub">${escapeHTML(model.statusMsg)}</span>
+                </article>
+            </div>`;
+
+        const fortune = cachedFortune;
+        if (!fortune) {
+            fortuneContent.innerHTML = `<div class="${P}-card ${P}-skeleton"><span>${escapeHTML(SYSTEM_COPY.fortuneLoading)}</span></div>`;
+        } else {
+            const score = Math.max(0, Math.min(100, Number(fortune.score) || 0));
+            fortuneContent.innerHTML = `
+                <article class="${P}-card">
+                    <div class="${P}-fortune-head"><div><span class="${P}-eyebrow">TODAY'S SIGNAL</span><strong class="${P}-fortune-title">${escapeHTML(fortune.title)}</strong></div><strong class="${P}-fortune-score">${score}점</strong></div>
+                    <div class="${P}-bar ${P}-bar-amber"><i style="width:${score}%"></i></div>
+                    <p class="${P}-fortune-body">${escapeHTML(fortune.body)}</p>
+                    <div class="${P}-fortune-advice"><strong>오늘의 생존 팁</strong><br>${escapeHTML(fortune.advice)}</div>
+                    ${buildFortuneHistChart(fortune.history, score)}
+                </article>`;
+        }
+
+        const input = document.getElementById(`${P}-chat-input`);
+        if (input) input.placeholder = SYSTEM_COPY.chatPlaceholder;
     }
 
     /* ==========================================================================
@@ -758,113 +851,71 @@
                 injectStyles();
                 box = document.createElement("div");
                 box.id = `${P}-root`;
-                box.innerHTML = buildHTML();
+                box.innerHTML = buildAuroraHTML();
                 document.body.appendChild(box);
 
                 document.getElementById(`${P}-btn-close`).addEventListener("click", () => { box.style.display = "none"; });
-                document.getElementById(`${P}-btn-min`).addEventListener("click", () => { box.classList.toggle(`${P}-min`); });
+                document.getElementById(`${P}-btn-min`).addEventListener("click", (event) => {
+                    const minimized = box.classList.toggle(`${P}-min`);
+                    event.currentTarget.setAttribute('aria-expanded', String(!minimized));
+                    event.currentTarget.setAttribute('aria-label', minimized ? '위젯 펼치기' : '위젯 최소화');
+                });
 
                 const inp = document.getElementById(`${P}-chat-input`);
                 const btn = document.getElementById(`${P}-chat-send`);
-                const doSend = () => { if (inp.value.trim()) { sendChat(inp.value); inp.value = ""; } };
-                btn.addEventListener("click", doSend);
-                inp.addEventListener("keypress", (e) => { if (e.key === "Enter") doSend(); });
+                const live = document.getElementById(`${P}-chat-live`);
+                const counter = document.getElementById(`${P}-chat-count`);
+                const updateCount = () => { counter.textContent = `${inp.value.length}/27`; };
+                const doSend = async () => {
+                    const original = inp.value.trim();
+                    if (!original || btn.disabled) return;
+                    btn.disabled = true;
+                    btn.textContent = SYSTEM_COPY.chatSending;
+                    const sent = await sendChat(original);
+                    if (sent) {
+                        inp.value = '';
+                        live.textContent = SYSTEM_COPY.chatSent;
+                    } else {
+                        inp.value = original;
+                        live.textContent = SYSTEM_COPY.chatError;
+                    }
+                    updateCount();
+                    btn.disabled = false;
+                    btn.textContent = '보내기';
+                };
+                btn.addEventListener('click', doSend);
+                inp.addEventListener('input', updateCount);
+                inp.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault();
+                        doSend();
+                    }
+                });
 
+                initTabs();
                 initDrag(box);
+                setChatState('loading');
                 fetchChat();
             } else {
                 box.style.display = "";
             }
 
-            // 운세 카드
-            const f = cachedFortune;
-            const fortuneCard = f ? `
-            <div class="${P}-cd">
-                <div class="${P}-cl">🔮 오늘의 운세</div>
-                <div class="${P}-rw">
-                    <span class="${P}-ft-title">${f.title}</span>
-                    <span class="${P}-ft-score">${f.score}점</span>
-                </div>
-                <div class="${P}-ft-bar">
-                    <div class="${P}-ft-bar-fill" style="width:${f.score}%"></div>
-                </div>
-                <div class="${P}-ft-body">${f.body}</div>
-                <div class="${P}-ft-advice">💡 ${f.advice}</div>
-                ${buildFortuneHistChart(f.history, f.score)}
-            </div>` : `
-            <div class="${P}-cd">
-                <div class="${P}-cl">🔮 오늘의 운세</div>
-                <div style="font-size:12px;color:rgba(255,255,255,0.3);text-align:center;padding:8px 0;">운세 불러오는 중...</div>
-            </div>`;
-
-            const stats = document.getElementById(`${P}-stats`);
-            if (!stats) return;
-
-            const isDone = todayDone >= 9;
-            const isMealOk = todayDone >= 11.5;
-
-            const mealCard = isDone ? `
-            <div class="${P}-cd">
-                <div class="${P}-cl">🍽️ 야근 식대</div>
-                <div class="${P}-rw">
-                    <span class="${P}-lb">자격까지</span>
-                    <span class="${P}-vs" style="color:${isMealOk ? '#34d399' : '#fda4af'}">
-                        ${isMealOk ? '✔ 획득 완료' : fmt(11.5 - todayDone) + ' 남음'}
-                    </span>
-                </div>
-                <div class="${P}-pb">
-                    <div class="${P}-pf ${isMealOk ? P+'-pf-g' : P+'-pf-r'}" style="width:${mealPct}%"></div>
-                </div>
-            </div>` : '';
-
-            stats.innerHTML = `
-            <div class="${P}-cd">
-                <div class="${P}-cl">⏱ 오늘 근무</div>
-                <div class="${P}-rw">
-                    <span class="${P}-lb">근무시간</span>
-                    <span class="${P}-vl">${fmt(todayDone)} <span class="${P}-dm">/ 9:00</span></span>
-                </div>
-                <div class="${P}-pb ${P}-pb-l">
-                    <div class="${P}-pf ${P}-pf-v" style="width:${dailyPct}%"></div>
-                </div>
-                <div class="${P}-rw" style="margin-top:12px;">
-                    <span>
-                        ${isDone
-                            ? `<span class="${P}-bg ${P}-bg-ok">🏁 퇴근 가능</span>`
-                            : `<span class="${P}-bg ${P}-bg-wt">🏃 ${fmt(9 - todayDone)} 남음</span>`}
-                    </span>
-                    <span class="${P}-sb" style="margin:0;">예상 퇴근 <b>${endTime}</b></span>
-                </div>
-            </div>
-
-            ${mealCard}
-
-            <div class="${P}-cd">
-                <div class="${P}-cl">📊 주간 현황</div>
-                <div class="${P}-rw">
-                    <span class="${P}-lb">주간 누적</span>
-                    <span class="${P}-vs">${fmt(realWeekly)} <span class="${P}-dm">/ 53h</span></span>
-                </div>
-                <div class="${P}-pb">
-                    <div class="${P}-pf ${P}-pf-t" style="width:${weeklyPct}%"></div>
-                </div>
-                <div class="${P}-rw" style="margin-top:10px;">
-                    <span class="${P}-lb">OT 달성</span>
-                    <span class="${P}-vs">${fmt(extraDone)} <span class="${P}-dm">/ 8h</span></span>
-                </div>
-                <div class="${P}-pb">
-                    <div class="${P}-pf ${P}-pf-a" style="width:${extraPct}%"></div>
-                </div>
-                <div class="${P}-sb">
-                    하루 평균 <b>${avgExtra <= 0 ? '0:00' : fmt(avgExtra)}</b> 추가 필요
-                </div>
-            </div>
-
-            <div class="${P}-st">
-                ${isDone ? '🚀' : '💭'} ${statusMsg}
-            </div>
-
-            ${fortuneCard}`;
+            renderDashboard({
+                todayDone,
+                dailyPct,
+                remaining: Math.max(0, DAILY_GOAL - todayDone),
+                endTime,
+                isDone: todayDone >= DAILY_GOAL,
+                statusMsg,
+                realWeekly,
+                weeklyPct,
+                extraDone,
+                extraPct,
+                avgExtra,
+                mealPct,
+                isMealOk: todayDone >= DAILY_GOAL + MEAL_QUALIFY_HOURS
+            });
+            return;
 
         } catch (_) {}
     }
