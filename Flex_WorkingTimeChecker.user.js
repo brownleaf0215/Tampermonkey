@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Flex 근무시간 체크 - 밥자격 + 실제 퇴근시간 완벽판
-// @version      9.1.0
+// @version      9.1.1
 // @description  Neo Tokyo 싸펑 애니 HUD + 강한 네온 모션 + 근무·운세·안전한 익명 채팅
 // @match        https://flex.team/time-tracking/my-work-record*
 // @updateURL    https://raw.githubusercontent.com/brownleaf0215/Tampermonkey/main/Flex_WorkingTimeChecker.user.js
@@ -673,6 +673,14 @@
 
     let selectedTab = 'work';
 
+    function scrollChatToLatest() {
+        const chatBox = document.getElementById(`${P}-chat-display`);
+        if (!chatBox) return;
+        requestAnimationFrame(() => {
+            chatBox.scrollTop = chatBox.scrollHeight;
+        });
+    }
+
     function selectTab(name, focus = false) {
         selectedTab = name;
         document.querySelectorAll(`#${P}-root [role="tab"]`).forEach((tab) => {
@@ -684,6 +692,7 @@
         document.querySelectorAll(`#${P}-root [role="tabpanel"]`).forEach((panel) => {
             panel.hidden = panel.dataset.panel !== name;
         });
+        if (name === 'chat') scrollChatToLatest();
     }
 
     function initTabs() {
